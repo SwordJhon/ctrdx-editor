@@ -1,0 +1,36 @@
+{
+    "Window.Title": "Cut the Rope: DX - Level Editor",
+
+    "Menu.File": "_File",
+    "Menu.File.Open": "_Open...",
+    "Menu.File.SaveAs": "Save _As...",
+
+    "Menu.View": "_View",
+    "Menu.View.ZoomIn": "Zoom _In",
+    "Menu.View.ZoomOut": "Zoom _Out",
+    "Menu.View.ZoomFit": "Zoom to _Fit",
+    "Menu.View.SnapToGrid": "Snap to grid",
+
+    "Panel.Objects": "Objects",
+    "Panel.Properties": "Properties",
+
+    "Dialog.Open.Title": "Open level XML",
+    "Dialog.Save.Title": "Save level XML",
+    "Dialog.FileType.LevelXml": "Level XML",
+
+    "Object.target": "Om Nom",
+    "Object.candy": "Candy",
+    "Object.star": "Star",
+    "Object.grab": "Grab",
+
+    "Attr.timeout": "Timeout",
+    "Attr.length": "Length",
+    "Attr.part": "Part",
+    "Attr.wheel": "Wheel",
+    "Attr.gun": "Gun",
+    "Attr.radius": "Radius",
+    "Attr.moveLength": "Move length",
+    "Attr.moveVertical": "Move vertically",
+    "Attr.moveOffset": "Move offset",
+    "Attr.spider": "Spider"
+}
