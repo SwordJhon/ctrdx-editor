@@ -55,3 +55,18 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Editor-specific
+.DS_Store
+.idea/
+
+# Binary content assets — fetched from ctrdx-assets at build time, not stored in Git
+content/**/*.png
+content/**/*.wav
+content/**/*.ogg
+content/**/*.mp4
+content/**/*.ttf
+content/**/*.otf
+content/**/*.cur
+content/**/*.xnb
+content/**/*.wmv
