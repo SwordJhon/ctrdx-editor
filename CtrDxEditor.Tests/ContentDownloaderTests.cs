@@ -10,18 +10,19 @@ namespace CtrDxEditor.Tests
     public class ContentDownloaderTests
     {
         [Fact]
-        public void ExtractInto_unpacks_a_valid_bundle()
+        public void ExtractIntoUnpacksAValidBundle()
         {
             string root = Directory.CreateTempSubdirectory("ctrdx-dl-").FullName;
             try
             {
                 // Build a content tree and zip it (the bundle layout: files at the zip root).
                 string src = Path.Combine(root, "src");
-                Directory.CreateDirectory(Path.Combine(src, "images"));
+                _ = Directory.CreateDirectory(Path.Combine(src, "images"));
                 File.WriteAllText(Path.Combine(src, "images", "a.png"), "x");
                 File.WriteAllText(
                     Path.Combine(src, ContentManifest.FileName),
-                    """{"files":{"images/a.png":"_"}}""");
+                                         /*lang=json,strict*/
+                                         """{"files":{"images/a.png":"_"}}""");
                 string zipPath = Path.Combine(root, "bundle.zip");
                 ZipFile.CreateFromDirectory(src, zipPath);
 

@@ -14,15 +14,16 @@ namespace CtrDxEditor.Tests
     {
         private static void WriteValidContent(string dir)
         {
-            Directory.CreateDirectory(Path.Combine(dir, "images"));
+            _ = Directory.CreateDirectory(Path.Combine(dir, "images"));
             File.WriteAllText(Path.Combine(dir, "images", "a.png"), "x");
             File.WriteAllText(
                 Path.Combine(dir, ContentManifest.FileName),
-                """{"files":{"images/a.png":"_"}}""");
+                                     /*lang=json,strict*/
+                                     """{"files":{"images/a.png":"_"}}""");
         }
 
         [Fact]
-        public async Task CancelDownload_stops_the_download_without_error()
+        public async Task CancelDownloadStopsTheDownloadWithoutError()
         {
             // A download that only completes when its cancellation token fires.
             ContentSetupViewModel vm = new(
@@ -42,7 +43,7 @@ namespace CtrDxEditor.Tests
         }
 
         [Fact]
-        public async Task DownloadCommand_success_sets_resolved_path_and_raises_completed()
+        public async Task DownloadCommandSuccessSetsResolvedPathAndRaisesCompleted()
         {
             string root = Directory.CreateTempSubdirectory("ctrdx-vm-").FullName;
             try
@@ -51,7 +52,7 @@ namespace CtrDxEditor.Tests
                 string? saved = null;
                 bool completed = false;
 
-                Task Fake(string d, IProgress<double> p, CancellationToken ct)
+                static Task Fake(string d, IProgress<double> p, CancellationToken ct)
                 {
                     WriteValidContent(d);
                     p.Report(1.0);
@@ -72,7 +73,7 @@ namespace CtrDxEditor.Tests
         }
 
         [Fact]
-        public async Task DownloadCommand_failure_sets_error_and_leaves_path_null()
+        public async Task DownloadCommandFailureSetsErrorAndLeavesPathNull()
         {
             ContentSetupViewModel vm = new(
                 "/unused",
@@ -87,7 +88,7 @@ namespace CtrDxEditor.Tests
         }
 
         [Fact]
-        public void ApplyLocatedFolder_invalid_sets_error()
+        public void ApplyLocatedFolderInvalidSetsError()
         {
             string dir = Directory.CreateTempSubdirectory("ctrdx-vm-").FullName;
             try
@@ -103,7 +104,7 @@ namespace CtrDxEditor.Tests
         }
 
         [Fact]
-        public void ApplyLocatedFolder_valid_saves_and_completes()
+        public void ApplyLocatedFolderValidSavesAndCompletes()
         {
             string root = Directory.CreateTempSubdirectory("ctrdx-vm-").FullName;
             try
