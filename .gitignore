@@ -61,4 +61,4 @@ nunit-*.xml
 .idea/
 
 # Binary content assets — fetched from ctrdx-assets at build time, not stored in Git
-content/
+/content/
