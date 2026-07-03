@@ -9,15 +9,15 @@ namespace CutTheRopeDX.Editor.Content
             while (dir is not null)
             {
                 string candidate = Path.Combine(dir.FullName, "content");
-                if (Directory.Exists(Path.Combine(candidate, "maps")))
+                if (File.Exists(Path.Combine(candidate, "file_manifest.json")))
                 {
                     return candidate;
                 }
                 dir = dir.Parent;
             }
             throw new DirectoryNotFoundException(
-                "Could not locate a 'content/maps' directory in any parent of " + AppContext.BaseDirectory +
-                ". Expected a 'content' folder containing a 'maps' subfolder.");
+                "Could not locate the 'content' directory in any parent of " + AppContext.BaseDirectory +
+                ". Expected a 'content' folder containing 'file_manifest.json'.");
         }
     }
 }
