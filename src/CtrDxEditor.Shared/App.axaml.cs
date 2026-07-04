@@ -1,0 +1,106 @@
+using System;
+using System.Threading.Tasks;
+
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+
+using CtrDxEditor.Content;
+using CtrDxEditor.Startup;
+using CtrDxEditor.ViewModels;
+using CtrDxEditor.Views;
+
+namespace CtrDxEditor
+{
+    /// <summary>Avalonia application root: platform-neutral startup driven by an injected <see cref="PlatformStartup"/>.</summary>
+    /// <remarks>Creates the application with its platform services.</remarks>
+    public partial class App(PlatformStartup startup) : Application
+    {
+        private readonly PlatformStartup _startup = startup;
+
+        /// <summary>Parameterless constructor required by Avalonia's XAML runtime loader (previewer/hot reload); never used for actual app startup.</summary>
+        public App() : this(null!)
+        {
+        }
+
+        /// <inheritdoc />
+        public override void Initialize()
+        {
+            AvaloniaXamlLoader.Load(this);
+        }
+
+        /// <inheritdoc />
+        public override void OnFrameworkInitializationCompleted()
+        {
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                MainWindow window = new();
+                desktop.MainWindow = window;
+                window.Opened += async (_, _) => await StartAsync(window, allowQuit: true, desktop);
+            }
+            else if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)
+            {
+                MainView view = new();
+                // Single-view has no window "Opened"; start once attached to the visual tree.
+                // Subscribe before assigning MainView: the browser lifetime attaches the view to
+                // the visual tree synchronously inside the setter, so subscribing after would miss the event.
+                view.AttachedToVisualTree += async (_, _) => await StartAsync(view, allowQuit: false, desktop: null);
+                singleView.MainView = view;
+            }
+            base.OnFrameworkInitializationCompleted();
+        }
+
+        private bool _started;
+
+        private async Task StartAsync(Control root, bool allowQuit, IClassicDesktopStyleApplicationLifetime? desktop)
+        {
+            if (_started)
+            {
+                return; // AttachedToVisualTree can fire more than once.
+            }
+            _started = true;
+
+            IContentStore? installed = await _startup.ResolveInstalled();
+            if (installed is not null && await TryShowEditorAsync(root, installed))
+            {
+                return;
+            }
+
+            // Either no content is installed, or installed content passed the cheap existence check
+            // yet failed to actually load (wrong-platform bundle, corrupt atlas, ...): run setup.
+            ContentSetupViewModel vm = new(
+                _startup.Installer,
+                async () => await TryShowEditorAsync(root, _startup.InstalledStore()),
+                allowQuit: allowQuit,
+                allowManualDownload: allowQuit,
+                downloadSizeLabel: _startup.DownloadSizeLabel);
+            ContentSetupDialog dialog = new() { DataContext = vm };
+            _ = await dialog.ShowAsync();
+
+            // Desktop may quit if the user dismissed setup without installing; the browser never quits.
+            if (allowQuit && root.DataContext is null)
+            {
+                desktop?.Shutdown();
+            }
+        }
+
+        private async Task<bool> TryShowEditorAsync(Control root, IContentStore store)
+        {
+            try
+            {
+                SpriteCache sprites = new(store, _startup.SpriteImageExtension);
+                await sprites.PreloadAsync();
+                root.DataContext = new EditorViewModel(sprites);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // Content resolved but can't be loaded; surface it and let the caller re-run setup
+                // rather than crashing the app with an unhandled exception.
+                Console.WriteLine($"[CtrDx] Installed content failed to load; falling back to setup.\n{ex}");
+                return false;
+            }
+        }
+    }
+}

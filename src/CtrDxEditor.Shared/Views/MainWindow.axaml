@@ -1,0 +1,11 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:CtrDxEditor.Views"
+        xmlns:vm="using:CtrDxEditor.ViewModels"
+        xmlns:loc="using:CtrDxEditor.Localization"
+        x:Class="CtrDxEditor.Views.MainWindow"
+        x:DataType="vm:EditorViewModel"
+        Width="1100" Height="720"
+        Title="{loc:Tr Window.Title}">
+  <views:MainView />
+</Window>

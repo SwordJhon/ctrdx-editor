@@ -13,14 +13,64 @@ namespace CtrDxEditor.Tests
     /// <summary>Tests for the first-run content setup view model.</summary>
     public class ContentSetupViewModelTests
     {
-        private static void WriteValidContent(string dir)
+        private sealed class FakeInstaller(
+            Func<IProgress<InstallProgress>?, CancellationToken, Task>? download = null,
+            Func<Stream, CancellationToken, Task>? zip = null) : IContentInstaller
         {
-            _ = Directory.CreateDirectory(Path.Combine(dir, "images"));
-            File.WriteAllText(Path.Combine(dir, "images", "a.png"), "x");
-            File.WriteAllText(
-                Path.Combine(dir, ContentManifest.FileName),
-                                     /*lang=json,strict*/
-                                     """{"files":{"images/a.png":"_"}}""");
+            public Task InstallFromDownloadAsync(IProgress<InstallProgress>? progress, CancellationToken ct)
+            {
+                return download is null ? Task.CompletedTask : download(progress, ct);
+            }
+
+            public Task InstallFromZipAsync(Stream zipStream, CancellationToken ct)
+            {
+                return zip is null ? Task.CompletedTask : zip(zipStream, ct);
+            }
+        }
+
+        /// <summary>Verifies allowQuit/allowManualDownload default to true, matching today's always-shown buttons.</summary>
+        [Fact]
+        public void AllowQuitAndAllowManualDownloadDefaultToTrue()
+        {
+            ContentSetupViewModel vm = new(new FakeInstaller(), () => Task.CompletedTask);
+
+            Assert.True(vm.AllowQuit);
+            Assert.True(vm.AllowManualDownload);
+        }
+
+        /// <summary>Verifies allowQuit/allowManualDownload can each be disabled independently (the browser's setup).</summary>
+        [Fact]
+        public void AllowQuitAndAllowManualDownloadCanBeDisabledIndependently()
+        {
+            ContentSetupViewModel vm = new(
+                new FakeInstaller(), () => Task.CompletedTask, allowQuit: false, allowManualDownload: true);
+
+            Assert.False(vm.AllowQuit);
+            Assert.True(vm.AllowManualDownload);
+        }
+
+        /// <summary>Verifies the download-size disclosure is hidden by default (no label supplied).</summary>
+        [Fact]
+        public void ShowDownloadSizeLabelIsFalseWhenNoLabelSupplied()
+        {
+            ContentSetupViewModel vm = new(new FakeInstaller(), () => Task.CompletedTask);
+
+            Assert.False(vm.ShowDownloadSizeLabel);
+            Assert.Equal(string.Empty, vm.DownloadSizeLabel);
+        }
+
+        /// <summary>Verifies the download-size disclosure shows while idle when supplied, and hides while busy.</summary>
+        [Fact]
+        public void ShowDownloadSizeLabelReflectsSuppliedLabelAndBusyState()
+        {
+            ContentSetupViewModel vm = new(
+                new FakeInstaller(), () => Task.CompletedTask, downloadSizeLabel: "25.1 MB");
+
+            Assert.Equal("25.1 MB", vm.DownloadSizeLabel);
+            Assert.True(vm.ShowDownloadSizeLabel);
+
+            vm.IsBusy = true;
+            Assert.False(vm.ShowDownloadSizeLabel);
         }
 
         /// <summary>Verifies that cancelling an active download clears busy state without an error.</summary>
@@ -29,9 +79,8 @@ namespace CtrDxEditor.Tests
         {
             // A download that only completes when its cancellation token fires.
             ContentSetupViewModel vm = new(
-                "/unused",
-                (d, p, ct) => Task.Delay(Timeout.Infinite, ct),
-                _ => { });
+                new FakeInstaller(download: (p, ct) => Task.Delay(Timeout.Infinite, ct)),
+                () => Task.CompletedTask);
 
             Task run = vm.DownloadCommand.ExecuteAsync(null);
             Assert.True(vm.IsBusy);
@@ -40,93 +89,165 @@ namespace CtrDxEditor.Tests
             await run;
 
             Assert.False(vm.IsBusy);
-            Assert.Null(vm.ResolvedContentPath);
             Assert.Null(vm.ErrorMessage);
         }
 
-        /// <summary>Verifies that a successful download saves the path and raises completion.</summary>
+        /// <summary>Verifies IsDownloading (not IsInstallingZip) is set while a download is in progress, and clears after.</summary>
         [Fact]
-        public async Task DownloadCommandSuccessSetsResolvedPathAndRaisesCompleted()
-        {
-            string root = Directory.CreateTempSubdirectory("ctrdx-vm-").FullName;
-            try
-            {
-                string dest = Path.Combine(root, "content");
-                string? saved = null;
-                bool completed = false;
-
-                static Task Fake(string d, IProgress<double> p, CancellationToken ct)
-                {
-                    WriteValidContent(d);
-                    p.Report(1.0);
-                    return Task.CompletedTask;
-                }
-
-                ContentSetupViewModel vm = new(dest, Fake, path => saved = path);
-                vm.Completed += () => completed = true;
-
-                await vm.DownloadCommand.ExecuteAsync(null);
-
-                Assert.Equal(dest, vm.ResolvedContentPath);
-                Assert.Equal(dest, saved);
-                Assert.True(completed);
-                Assert.Null(vm.ErrorMessage);
-            }
-            finally { Directory.Delete(root, recursive: true); }
-        }
-
-        /// <summary>Verifies that a failed download reports an error and leaves setup unresolved.</summary>
-        [Fact]
-        public async Task DownloadCommandFailureSetsErrorAndLeavesPathNull()
+        public async Task DownloadCommandSetsIsDownloadingWhileRunning()
         {
             ContentSetupViewModel vm = new(
-                "/unused",
-                (d, p, ct) => throw new InvalidOperationException("boom"),
-                _ => { });
+                new FakeInstaller(download: (p, ct) => Task.Delay(Timeout.Infinite, ct)),
+                () => Task.CompletedTask);
+
+            Task run = vm.DownloadCommand.ExecuteAsync(null);
+            Assert.True(vm.IsDownloading);
+            Assert.False(vm.IsInstallingZip);
+
+            vm.CancelDownload();
+            await run;
+
+            Assert.False(vm.IsDownloading);
+            Assert.False(vm.IsInstallingZip);
+        }
+
+        /// <summary>Verifies the install reporting a Verifying stage flips the VM from downloading to the indeterminate verifying view, then clears.</summary>
+        [Fact]
+        public async Task DownloadReportingVerifyingStageSwitchesToVerifyingView()
+        {
+            TaskCompletionSource gate = new();
+            TaskCompletionSource verifyingSeen = new();
+            ContentSetupViewModel vm = new(
+                new FakeInstaller(download: async (p, ct) =>
+                {
+                    p?.Report(new InstallProgress(InstallStage.Verifying, 0));
+                    await gate.Task;
+                }),
+                () => Task.CompletedTask);
+            vm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(vm.IsVerifying) && vm.IsVerifying)
+                {
+                    _ = verifyingSeen.TrySetResult();
+                }
+            };
+
+            Task run = vm.DownloadCommand.ExecuteAsync(null);
+            // Progress<T> posts its callback asynchronously; wait for the flip rather than racing it.
+            await verifyingSeen.Task;
+            Assert.True(vm.IsVerifying);
+            Assert.False(vm.IsDownloading);
+
+            gate.SetResult();
+            await run;
+
+            Assert.False(vm.IsVerifying);
+            Assert.False(vm.IsBusy);
+        }
+
+        /// <summary>Verifies IsInstallingZip (not IsDownloading) is set while a picked zip is being installed, and clears after.</summary>
+        [Fact]
+        public async Task InstallFromZipAsyncSetsIsInstallingZipWhileRunning()
+        {
+            TaskCompletionSource gate = new();
+            ContentSetupViewModel vm = new(
+                new FakeInstaller(zip: async (s, ct) => await gate.Task),
+                () => Task.CompletedTask);
+
+            using MemoryStream zip = new();
+            Task run = vm.InstallFromZipAsync(zip);
+
+            Assert.True(vm.IsBusy);
+            Assert.True(vm.IsInstallingZip);
+            Assert.False(vm.IsDownloading);
+
+            gate.SetResult();
+            await run;
+
+            Assert.False(vm.IsBusy);
+            Assert.False(vm.IsInstallingZip);
+        }
+
+        /// <summary>Verifies that a successful download runs the completion callback and raises Completed.</summary>
+        [Fact]
+        public async Task DownloadCommandSuccessRunsOnInstalledAndRaisesCompleted()
+        {
+            bool installed = false;
+            bool completed = false;
+
+            static Task Fake(IProgress<InstallProgress>? p, CancellationToken ct)
+            {
+                p?.Report(new InstallProgress(InstallStage.Downloading, 1.0));
+                return Task.CompletedTask;
+            }
+
+            ContentSetupViewModel vm = new(
+                new FakeInstaller(download: Fake),
+                () => { installed = true; return Task.CompletedTask; });
+            vm.Completed += () => completed = true;
 
             await vm.DownloadCommand.ExecuteAsync(null);
 
-            Assert.Null(vm.ResolvedContentPath);
+            Assert.True(installed);
+            Assert.True(completed);
+            Assert.Null(vm.ErrorMessage);
+        }
+
+        /// <summary>Verifies that a failed download reports an error and never runs the completion callback.</summary>
+        [Fact]
+        public async Task DownloadCommandFailureSetsErrorAndSkipsOnInstalled()
+        {
+            bool installed = false;
+            ContentSetupViewModel vm = new(
+                new FakeInstaller(download: (p, ct) => throw new InvalidOperationException("boom")),
+                () => { installed = true; return Task.CompletedTask; });
+
+            await vm.DownloadCommand.ExecuteAsync(null);
+
+            Assert.False(installed);
             Assert.NotNull(vm.ErrorMessage);
             Assert.Contains("boom", vm.ErrorMessage);
         }
 
-        /// <summary>Verifies that locating an invalid folder records an error.</summary>
+        /// <summary>Verifies that installing from an uploaded zip runs the completion callback and raises Completed.</summary>
         [Fact]
-        public void ApplyLocatedFolderInvalidSetsError()
+        public async Task InstallFromZipAsyncSuccessRunsOnInstalledAndRaisesCompleted()
         {
-            string dir = Directory.CreateTempSubdirectory("ctrdx-vm-").FullName;
-            try
-            {
-                ContentSetupViewModel vm = new("/unused", (d, p, ct) => Task.CompletedTask, _ => { });
+            bool installed = false;
+            bool completed = false;
+            Stream? seen = null;
 
-                vm.ApplyLocatedFolder(dir); // empty dir -> invalid
+            ContentSetupViewModel vm = new(
+                new FakeInstaller(zip: (s, ct) => { seen = s; return Task.CompletedTask; }),
+                () => { installed = true; return Task.CompletedTask; });
+            vm.Completed += () => completed = true;
 
-                Assert.NotNull(vm.ErrorMessage);
-                Assert.Null(vm.ResolvedContentPath);
-            }
-            finally { Directory.Delete(dir, recursive: true); }
+            using MemoryStream zip = new();
+            await vm.InstallFromZipAsync(zip);
+
+            Assert.Same(zip, seen);
+            Assert.True(installed);
+            Assert.True(completed);
+            Assert.False(vm.IsBusy);
+            Assert.Null(vm.ErrorMessage);
         }
 
-        /// <summary>Verifies that locating a valid folder saves it and completes setup.</summary>
+        /// <summary>Verifies that a failed zip install reports an error and never runs the completion callback.</summary>
         [Fact]
-        public void ApplyLocatedFolderValidSavesAndCompletes()
+        public async Task InstallFromZipAsyncFailureSetsErrorAndSkipsOnInstalled()
         {
-            string root = Directory.CreateTempSubdirectory("ctrdx-vm-").FullName;
-            try
-            {
-                string dir = Path.Combine(root, "content");
-                WriteValidContent(dir);
-                string? saved = null;
-                ContentSetupViewModel vm = new("/unused", (d, p, ct) => Task.CompletedTask, p => saved = p);
+            bool installed = false;
+            ContentSetupViewModel vm = new(
+                new FakeInstaller(zip: (s, ct) => throw new InvalidOperationException("bad zip")),
+                () => { installed = true; return Task.CompletedTask; });
 
-                vm.ApplyLocatedFolder(dir);
+            using MemoryStream zip = new();
+            await vm.InstallFromZipAsync(zip);
 
-                Assert.Equal(dir, vm.ResolvedContentPath);
-                Assert.Equal(dir, saved);
-                Assert.Null(vm.ErrorMessage);
-            }
-            finally { Directory.Delete(root, recursive: true); }
+            Assert.False(installed);
+            Assert.False(vm.IsBusy);
+            Assert.NotNull(vm.ErrorMessage);
+            Assert.Contains("bad zip", vm.ErrorMessage);
         }
     }
 }
