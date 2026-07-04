@@ -193,25 +193,7 @@ namespace CtrDxEditor.Rendering
             }
 
             IReadOnlyList<LevelObject> objects = doc.Objects;
-            foreach (LevelObject obj in objects)
-            {
-                if (obj.Type != "grab")
-                {
-                    continue;
-                }
-
-                RopeTarget rope = RopeResolver.Resolve(obj, objects, doc.TwoParts);
-                if (rope.Target is null)
-                {
-                    continue;
-                }
-
-                Vec2 a = v.LevelToScreen(new Vec2(obj.X, obj.Y));
-                Vec2 b = v.LevelToScreen(new Vec2(rope.Target.X, rope.Target.Y));
-                IBrush brush = rope.Kind == RopeTargetKind.Bulb ? Brushes.Khaki : Brushes.IndianRed;
-                Pen pen = new(brush, 3) { DashStyle = new DashStyle([4, 3], 0) };
-                context.DrawLine(pen, new Point(a.X, a.Y), new Point(b.X, b.Y));
-            }
+            RopeRenderer.Draw(context, v, sprites, doc, new Rect(Bounds.Size));
 
             foreach (LevelObject obj in objects)
             {
