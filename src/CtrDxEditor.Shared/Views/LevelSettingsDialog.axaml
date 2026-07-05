@@ -1,0 +1,91 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CtrDxEditor.ViewModels"
+             xmlns:loc="using:CtrDxEditor.Localization"
+             x:Class="CtrDxEditor.Views.LevelSettingsDialog"
+             x:DataType="vm:LevelSettingsViewModel">
+  <StackPanel Margin="24" Spacing="12" Width="360">
+    <TextBlock x:Name="TitleText" FontSize="18" FontWeight="SemiBold" />
+
+    <StackPanel Spacing="4">
+      <TextBlock Text="{loc:Tr Dialog.LevelSettings.Resolution}" />
+      <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
+                HorizontalAlignment="Stretch">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:ResolutionPreset">
+            <TextBlock Text="{Binding Label}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <!-- The manual W×H inputs only appear when the "Custom…" preset is selected. -->
+      <Grid ColumnDefinitions="*,Auto,*" RowDefinitions="Auto,Auto" Margin="0,4,0,0" IsVisible="{Binding IsCustom}">
+        <NumericUpDown Grid.Row="0" Grid.Column="0" Minimum="320" Maximum="9999" Increment="1" FormatString="0"
+                       Value="{Binding CustomWidth, Mode=TwoWay}" />
+        <TextBlock Grid.Row="0" Grid.Column="1" Text="x" VerticalAlignment="Center" Margin="8,0" />
+        <NumericUpDown Grid.Row="0" Grid.Column="2" Minimum="480" Maximum="9999" Increment="1" FormatString="0"
+                       Value="{Binding CustomHeight, Mode=TwoWay}" />
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr Dialog.LevelSettings.EnterNumber}"
+                   Foreground="#E06C75" FontSize="12" Margin="0,2,0,0"
+                   IsVisible="{Binding CustomWidth, Converter={x:Static ObjectConverters.IsNull}}" />
+        <TextBlock Grid.Row="1" Grid.Column="2" Text="{loc:Tr Dialog.LevelSettings.EnterNumber}"
+                   Foreground="#E06C75" FontSize="12" Margin="0,2,0,0"
+                   IsVisible="{Binding CustomHeight, Converter={x:Static ObjectConverters.IsNull}}" />
+      </Grid>
+    </StackPanel>
+
+    <StackPanel Spacing="4">
+      <TextBlock Text="{loc:Tr Dialog.LevelSettings.RopePhysicsSpeed}" />
+      <!-- Negatives are permitted (DX parses them without clamping), though only positive speeds are meaningful. -->
+      <NumericUpDown Minimum="-100" Maximum="100" Increment="0.1" FormatString="0.0#"
+                     Value="{Binding RopePhysicsSpeed, Mode=TwoWay}" />
+      <TextBlock Text="{loc:Tr Dialog.LevelSettings.EnterNumber}" Foreground="#E06C75" FontSize="12"
+                 IsVisible="{Binding RopePhysicsSpeed, Converter={x:Static ObjectConverters.IsNull}}" />
+    </StackPanel>
+
+    <StackPanel Spacing="4">
+      <TextBlock Text="{loc:Tr Dialog.LevelSettings.Special}"
+                 ToolTip.Tip="{loc:Tr Dialog.LevelSettings.SpecialTooltip}" />
+      <ComboBox ItemsSource="{Binding SpecialOptions}" SelectedItem="{Binding SelectedSpecial, Mode=TwoWay}"
+                HorizontalAlignment="Stretch"
+                ToolTip.Tip="{loc:Tr Dialog.LevelSettings.SpecialTooltip}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:SpecialOption">
+            <TextBlock Text="{Binding Label}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <!-- The manual value input only appears when the "Custom…" option is selected. -->
+      <StackPanel Spacing="2" IsVisible="{Binding IsSpecialCustom}">
+        <NumericUpDown Minimum="0" Maximum="99" Increment="1" FormatString="0"
+                       Value="{Binding CustomSpecial, Mode=TwoWay}" />
+        <TextBlock Text="{loc:Tr Dialog.LevelSettings.EnterNumber}" Foreground="#E06C75" FontSize="12"
+                   IsVisible="{Binding CustomSpecial, Converter={x:Static ObjectConverters.IsNull}}" />
+      </StackPanel>
+    </StackPanel>
+
+    <StackPanel Spacing="4">
+      <CheckBox Content="{loc:Tr Dialog.LevelSettings.HalfCandy}"
+                IsChecked="{Binding TwoParts, Mode=TwoWay}" IsEnabled="{Binding FlagsEditable}">
+        <ToolTip.Tip>
+          <StackPanel MaxWidth="260">
+            <TextBlock Text="{loc:Tr Dialog.LevelSettings.HalfCandyDescription}" TextWrapping="Wrap" />
+          </StackPanel>
+        </ToolTip.Tip>
+      </CheckBox>
+      <CheckBox Content="{loc:Tr Dialog.LevelSettings.NightLevel}"
+                IsChecked="{Binding NightLevel, Mode=TwoWay}" IsEnabled="{Binding FlagsEditable}">
+        <ToolTip.Tip>
+          <StackPanel MaxWidth="260">
+            <TextBlock Text="{loc:Tr Dialog.LevelSettings.NightLevelDescription}" TextWrapping="Wrap" />
+          </StackPanel>
+        </ToolTip.Tip>
+      </CheckBox>
+    </StackPanel>
+
+    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,8,0,0">
+      <Button Grid.Column="1" Content="{loc:Tr Dialog.Common.Cancel}" Click="Cancel_Click" Margin="0,0,8,0" />
+      <Button Grid.Column="2" x:Name="ConfirmButton" Click="Confirm_Click" Classes="accent"
+              IsEnabled="{Binding CanConfirm}" />
+    </Grid>
+  </StackPanel>
+</UserControl>

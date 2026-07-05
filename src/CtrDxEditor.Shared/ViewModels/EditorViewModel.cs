@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -45,6 +46,9 @@ namespace CtrDxEditor.ViewModels
         /// <summary>Raised after a level XML document has loaded into the editor.</summary>
         public event Action? LevelLoaded;
 
+        /// <summary>The current level's editable settings, or null when no level is loaded.</summary>
+        public LevelSettings? CurrentSettings => Document?.Settings;
+
         /// <summary>Loads a level from its XML text into the editor.</summary>
         public void LoadLevelXml(string xml)
         {
@@ -55,6 +59,40 @@ namespace CtrDxEditor.ViewModels
             RefreshPalette();
             RefreshObjectList();
             LevelLoaded?.Invoke();
+        }
+
+        /// <summary>Creates a new empty level from the given settings and loads it into the editor.</summary>
+        public void NewLevel(LevelSettings settings)
+        {
+            Document = LevelDocument.CreateNew(settings);
+            SelectedObject = null;
+            LockedObject = null;
+            RefreshPalette();
+            RefreshObjectList();
+            LevelLoaded?.Invoke();
+        }
+
+        /// <summary>Writes edited settings back into the current level and refreshes the view.</summary>
+        public void UpdateLevelSettings(LevelSettings settings)
+        {
+            if (Document is null)
+            {
+                return;
+            }
+            Document.UpdateSettings(settings);
+            RefreshPalette();
+            RefreshObjectList();
+            if (SelectedObject is not null && !Document.Objects.Contains(SelectedObject))
+            {
+                SelectedObject = null;
+            }
+            if (LockedObject is not null && !Document.Objects.Contains(LockedObject))
+            {
+                LockedObject = null;
+            }
+            // Resolution may have changed; re-fit and repaint the canvas.
+            LevelLoaded?.Invoke();
+            ObjectMutated?.Invoke();
         }
 
         /// <summary>Deletes the currently selected object, if one exists.</summary>
@@ -113,10 +151,26 @@ namespace CtrDxEditor.ViewModels
             Palette.Clear();
             foreach (ObjectDescriptor d in _descriptors.ByElement.Values)
             {
+                if (Document is not null && !IsAvailableInLevel(d.ElementName, Document))
+                {
+                    continue;
+                }
                 bool enabled = Document is not null && !Cardinality.IsAtCapacity(d, objs);
                 Palette.Add(new PaletteItemViewModel(
                     d.ElementName, Localizer.ObjectName(d.ElementName), enabled, Sprites.GetThumbnail(d.ElementName)));
             }
+        }
+
+        // Candy type follows twoParts. When no document is
+        // loaded, everything is shown (disabled) so the palette isn't empty on startup.
+        private static bool IsAvailableInLevel(string element, LevelDocument doc)
+        {
+            return element switch
+            {
+                "candy" => !doc.TwoParts,
+                "candyL" or "candyR" => doc.TwoParts,
+                _ => true,
+            };
         }
 
         /// <summary>Places a new object if the descriptor exists and capacity allows it.</summary>
@@ -129,6 +183,7 @@ namespace CtrDxEditor.ViewModels
             }
 
             LevelObject obj = Placement.CreateObject(d, levelX, levelY);
+            LevelObjectPolicy.ApplyDefaults(obj, Document);
             Document.Add(obj);
             RefreshPalette();
             RefreshObjectList();
@@ -169,6 +224,10 @@ namespace CtrDxEditor.ViewModels
             {
                 foreach (AttributeSpec spec in d.Attributes)
                 {
+                    if (Document is not null && !LevelObjectPolicy.IsAttributeVisible(value.Type, spec.Name, Document))
+                    {
+                        continue;
+                    }
                     Fields.Add(new AttributeFieldViewModel(value, spec.Name, spec.EnumValues, Changed));
                 }
             }
