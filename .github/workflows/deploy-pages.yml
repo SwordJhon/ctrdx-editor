@@ -1,0 +1,76 @@
+name: Deploy Browser to GitHub Pages
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "src/**"
+            - ".github/workflows/deploy-pages.yml"
+    workflow_dispatch:
+
+# Least-privilege token plus the OIDC id-token the Pages deploy needs.
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+# Never run two Pages deploys at once; let a newer push supersede an in-flight one.
+concurrency:
+    group: pages
+    cancel-in-progress: true
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up .NET
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: "10.x"
+
+            # Required for the browser-wasm publish (native relink; WasmNativeStrip).
+            - name: Install wasm-tools workload
+              run: dotnet workload install wasm-tools
+
+            # Avoids re-downloading NuGet packages every run. No packages.lock.json
+            # in this repo, so key off the project/props files instead.
+            - name: Cache NuGet packages
+              uses: actions/cache@v4
+              with:
+                  path: ~/.nuget/packages
+                  key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props') }}
+                  restore-keys: nuget-${{ runner.os }}-
+
+            - name: Publish Browser head
+              run: >
+                  dotnet publish src/CtrDxEditor.Browser/CtrDxEditor.Browser.csproj
+                  -c Release -o dist
+
+            # GitHub Pages project sites live under /<repo>/, so the app's assets must
+            # resolve from there. Injected only into the published index.html, leaving
+            # the source (which serves from / during local dev) unchanged.
+            - name: Set base href for project page
+              run: |
+                  sed -i "s#<head>#<head>\n        <base href=\"/${{ github.event.repository.name }}/\" />#" dist/wwwroot/index.html
+
+            # Without this, GitHub Pages (Jekyll) drops the _framework/ runtime folder.
+            - name: Disable Jekyll
+              run: touch dist/wwwroot/.nojekyll
+
+            - name: Upload Pages artifact
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: dist/wwwroot
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - name: Deploy to GitHub Pages
+              id: deployment
+              uses: actions/deploy-pages@v4
