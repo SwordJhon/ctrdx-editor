@@ -333,6 +333,23 @@ namespace CtrDxEditor.Rendering
             // (Grab.DrawBack + Grab.Draw). Ropes with no target resolve to null and are skipped, keeping the
             // per-rope seed (for seasonal light frames) in step with the grabs that actually have a rope.
             Rect opBounds = new(Bounds.Size);
+
+            // Light-bulb lit-glow halos: an additive Skia pass under the bottles, matching the game's
+            // DrawLight-then-bottle order. Drawn once for every bulb with a positive litRadius.
+            List<(Vec2 Center, double Radius)> glowBulbs = [];
+            foreach (LevelObject o in objects)
+            {
+                if (o.Type == "lightBulb" && RadiusRing.Of(o) is { } ring)
+                {
+                    glowBulbs.Add((new Vec2(o.X, o.Y), ring.Radius));
+                }
+            }
+            if (glowBulbs.Count > 0 && sprites.GetSprite("lightBulb_glow") is { Layers.Count: >= 1 } glow)
+            {
+                SpriteLayerDraw glowLayer = glow.Layers[0];
+                context.Custom(new GlowDrawOperation(opBounds, v, glowLayer.Bitmap, glowLayer.Frame.Frame, glowBulbs));
+            }
+
             int ropeSeed = 0;
             foreach (LevelObject obj in objects)
             {
@@ -345,7 +362,19 @@ namespace CtrDxEditor.Rendering
                         ropeSeed++;
                     }
                 }
-                else
+                else if (obj.Type != "lightBulb")
+                {
+                    DrawObject(context, v, sprites, obj);
+                }
+            }
+
+            // Light-bulb bottles draw in a pass of their own, above every rope, matching the game's
+            // order (GameScene.Draw: all bungee ropes first, then LightBulb.DrawBottleAndFirefly last).
+            // Drawing them inline would let a grab later in the object list paint its rope over an
+            // already-drawn bottle.
+            foreach (LevelObject obj in objects)
+            {
+                if (obj.Type == "lightBulb")
                 {
                     DrawObject(context, v, sprites, obj);
                 }
@@ -636,7 +665,8 @@ namespace CtrDxEditor.Rendering
         // ~6px screen tolerance (converted to level units by the current zoom).
         private bool OnRadiusEdge(Vec2 levelPt)
         {
-            return SelectedObject is { Type: "grab" } g && View.Zoom > 0 && GrabRadius.Of(g) is double r && GrabRadius.OnEdge(new Vec2(g.X, g.Y), r, levelPt, 6 / View.Zoom);
+            return SelectedObject is { } g && View.Zoom > 0 && RadiusRing.Of(g) is { } ring
+                && GrabRadius.OnEdge(new Vec2(g.X, g.Y), ring.Radius, levelPt, 6 / View.Zoom);
         }
 
         // What part of the selected movable grab's rail a level point is over, or None. The hit-testing
@@ -855,10 +885,10 @@ namespace CtrDxEditor.Rendering
             Point p = e.GetPosition(this);
             Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
 
-            if (_resizingRadius && SelectedObject is { } g)
+            if (_resizingRadius && SelectedObject is { } g && RadiusRing.Of(g) is { } ring)
             {
                 double r = GrabRadius.FromDrag(new Vec2(g.X, g.Y), levelPt);
-                g.SetAttr("radius", ((int)Math.Round(r)).ToString(CultureInfo.InvariantCulture));
+                g.SetAttr(ring.Attr, ((int)Math.Round(r)).ToString(CultureInfo.InvariantCulture));
                 SelectedObjectMoved?.Invoke();
                 InvalidateVisual();
                 return;
