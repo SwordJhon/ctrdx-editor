@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -41,8 +42,65 @@ namespace CtrDxEditor.Tests
             return new(new SpriteCache(new EmptyStore()));
         }
 
+        /// <summary>Single-candy grabs with only one candy have no raw part or attachTo field.</summary>
         [Fact]
-        public void FullCandyGrabPropertiesHidePart()
+        public void FullCandyGrabHasNoPartOrAttachToWhenSingleCandy()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 300, 300);
+
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.DoesNotContain(vm.Fields, f => f.Name == "part");
+            Assert.DoesNotContain(vm.Fields, f => f.Name == "attachTo");
+        }
+
+        /// <summary>Two-part grabs expose an attachTo choice for left and right candy halves.</summary>
+        [Fact]
+        public void HalfCandyGrabShowsAttachToLeftRight()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: true, NightLevel: false));
+            _ = vm.PlaceObject("candyL", 200, 200);
+            _ = vm.PlaceObject("candyR", 300, 200);
+
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.DoesNotContain(vm.Fields, f => f.Name == "part");
+            AttributeFieldViewModel attach = vm.Fields.Single(f => f.Name == "attachTo");
+            Assert.Equal(["Candy (left)", "Candy (right)"], attach.EnumOptions!.Select(o => o.Label));
+            // Default part "L" (applied on placement) selects the left option.
+            Assert.Equal("Candy (left)", attach.SelectedOption!.Label);
+
+            attach.SelectedOption = attach.EnumOptions!.Single(o => o.Label == "Candy (right)");
+
+            Assert.Equal("R", grab.GetAttr("part"));
+        }
+
+        /// <summary>Multi-candy grabs expose attachTo choices that write candyNumber.</summary>
+        [Fact]
+        public void MultiCandyGrabAttachToBindsByNumber()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 200, 200);
+            _ = vm.PlaceObject("candy", 300, 200);
+
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            AttributeFieldViewModel attach = vm.Fields.Single(f => f.Name == "attachTo");
+            attach.SelectedOption = attach.EnumOptions!.Single(o => o.Label == "Candy 1");
+
+            Assert.Equal("1", grab.GetAttr("candyNumber"));
+        }
+
+        /// <summary>Grab attribute should be a checkbox in the UI.</summary>
+        [Fact]
+        public void GrabBoolAttributeSurfacesAsCheckbox()
         {
             EditorViewModel vm = Vm();
             vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
@@ -50,31 +108,274 @@ namespace CtrDxEditor.Tests
             LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
             vm.SelectedObject = grab;
 
-            Assert.DoesNotContain(vm.Fields, f => f.Name == "part");
-            Assert.Null(grab.GetAttr("part"));
+            AttributeFieldViewModel wheel = vm.Fields.Single(f => f.Name == "wheel");
+            Assert.True(wheel.IsBool);
+            Assert.False(wheel.BoolValue);
+
+            wheel.BoolValue = true;
+            Assert.Equal("true", grab.GetAttr("wheel"));
         }
 
+        /// <summary>Auto-catch toggles radius disclosure and hides authored length.</summary>
         [Fact]
-        public void HalfCandyGrabDefaultsPartToLeftAndShowsPart()
+        public void AutoCatchToggleRevealsRadiusAndHidesLength()
         {
             EditorViewModel vm = Vm();
-            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: true, NightLevel: false));
-
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
             LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
             vm.SelectedObject = grab;
 
-            AttributeFieldViewModel part = vm.Fields.Single(f => f.Name == "part");
-            Assert.Equal("L", grab.GetAttr("part"));
-            Assert.Equal("L", part.Value);
-            Assert.NotNull(part.EnumValues);
-            Assert.Equal(["L", "R"], part.EnumValues);
-            Assert.NotNull(part.EnumOptions);
-            Assert.Equal(["left", "right"], part.EnumOptions.Select(o => o.Label));
+            Assert.Contains(vm.Fields, f => f.Name == "length");
+            Assert.DoesNotContain(vm.Fields, f => f.Name == "radius");
 
-            part.SelectedOption = part.EnumOptions.Single(o => o.Label == "right");
+            AttributeFieldViewModel autoCatch = vm.Fields.Single(f => f.Name == "autoCatch");
+            autoCatch.BoolValue = true;
 
-            Assert.Equal("R", grab.GetAttr("part"));
-            Assert.Equal("R", part.Value);
+            Assert.True(int.Parse(grab.GetAttr("radius")!, CultureInfo.InvariantCulture) > 0);
+            Assert.DoesNotContain(vm.Fields, f => f.Name == "length");
+            Assert.Contains(vm.Fields, f => f.Name == "radius");
+        }
+
+        /// <summary>Movable rail toggles rail sub-field disclosure.</summary>
+        [Fact]
+        public void MovableToggleRevealsRailFields()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.DoesNotContain(vm.Fields, f => f.Name == "moveOffset");
+
+            vm.Fields.Single(f => f.Name == "movable").BoolValue = true;
+
+            Assert.Contains(vm.Fields, f => f.Name == "moveVertical");
+            Assert.Contains(vm.Fields, f => f.Name == "moveLength");
+            Assert.Contains(vm.Fields, f => f.Name == "moveOffset");
+        }
+
+        /// <summary>Detached is a sub-option of suction cup.</summary>
+        [Fact]
+        public void DetachedShownOnlyWhenSuctionCupOn()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.DoesNotContain(vm.Fields, f => f.Name == "kicked");
+
+            vm.Fields.Single(f => f.Name == "kickable").BoolValue = true;
+
+            Assert.Contains(vm.Fields, f => f.Name == "kicked");
+        }
+
+        /// <summary>Gun mode disables hook variants and rope geometry controls.</summary>
+        [Fact]
+        public void GunDisablesHookVariantsAndRopeGeometry()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 200, 200);
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            vm.Fields.Single(f => f.Name == "gun").BoolValue = true;
+
+            Assert.False(vm.Fields.Single(f => f.Name == "wheel").IsEnabled);
+            Assert.False(vm.Fields.Single(f => f.Name == "spider").IsEnabled);
+            Assert.False(vm.Fields.Single(f => f.Name == "kickable").IsEnabled);
+            Assert.False(vm.Fields.Single(f => f.Name == "length").IsEnabled);
+            Assert.False(vm.Fields.Single(f => f.Name == "autoCatch").IsEnabled);
+            Assert.False(vm.Fields.Single(f => f.Name == "movable").IsEnabled);
+        }
+
+        /// <summary>An active hook variant disables gun without clearing the chosen variant.</summary>
+        [Fact]
+        public void ActiveHookVariantDisablesGun()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 200, 200);
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            vm.Fields.Single(f => f.Name == "spider").BoolValue = true;
+
+            Assert.False(vm.Fields.Single(f => f.Name == "gun").IsEnabled);
+        }
+
+        /// <summary>Movable rail disables hook variants that cannot coexist with rail art.</summary>
+        [Fact]
+        public void MovableRailDisablesRailBlockingVariants()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            vm.Fields.Single(f => f.Name == "movable").BoolValue = true;
+
+            Assert.False(vm.Fields.Single(f => f.Name == "wheel").IsEnabled);
+            Assert.False(vm.Fields.Single(f => f.Name == "gun").IsEnabled);
+            Assert.False(vm.Fields.Single(f => f.Name == "kickable").IsEnabled);
+        }
+
+        /// <summary>Wheel and gun grabs clear movable rail geometry so their sprites render in the canvas.</summary>
+        [Theory]
+        [InlineData("wheel")]
+        [InlineData("gun")]
+        public void RailBlockingVariantsClearMoveLength(string fieldName)
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 200, 200);
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            vm.Fields.Single(f => f.Name == "movable").BoolValue = true;
+            Assert.Equal("100", grab.GetAttr("moveLength"));
+
+            vm.Fields.Single(f => f.Name == fieldName).BoolValue = true;
+
+            Assert.Equal("-1", grab.GetAttr("moveLength"));
+            Assert.False(vm.Fields.Single(f => f.Name == "movable").IsEnabled);
+            Assert.DoesNotContain(vm.Fields, f => f.Name == "moveOffset");
+        }
+
+        /// <summary>Suction cup grabs disable the movable toggle so move rails cannot replace suction art.</summary>
+        [Fact]
+        public void SuctionCupDisablesMovableRail()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            vm.Fields.Single(f => f.Name == "kickable").BoolValue = true;
+
+            Assert.False(vm.Fields.Single(f => f.Name == "movable").IsEnabled);
+        }
+
+        /// <summary>Gun can still be authored in split-candy levels; only aim animation is gated.</summary>
+        [Fact]
+        public void GunEnabledInTwoPartsLevel()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: true, NightLevel: false));
+            _ = vm.PlaceObject("candyL", 200, 200);
+            _ = vm.PlaceObject("candyR", 300, 200);
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.True(vm.Fields.Single(f => f.Name == "gun").IsEnabled);
+        }
+
+        /// <summary>Gun targeting follows DX's single-primary-candy path, so one full candy enables it.</summary>
+        [Fact]
+        public void SingleFullCandyEnablesGunTargeting()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 200, 200);
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.True(vm.Fields.Single(f => f.Name == "gun").IsEnabled);
+        }
+
+        /// <summary>Gun can be authored before placing candy; aim movement activates once one full candy exists.</summary>
+        [Fact]
+        public void EmptyFullCandyLevelEnablesGunAuthoring()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.True(vm.Fields.Single(f => f.Name == "gun").IsEnabled);
+        }
+
+        /// <summary>Gun can still be authored in multi-candy levels; only aim animation is gated.</summary>
+        [Fact]
+        public void MultiCandyEnablesGunAuthoring()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 200, 200);
+            _ = vm.PlaceObject("candy", 300, 200);
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.True(vm.Fields.Single(f => f.Name == "gun").IsEnabled);
+        }
+
+        /// <summary>Selected single-candy objects expose the editable candyNumber field.</summary>
+        [Fact]
+        public void SelectedCandyShowsCandyNumberField()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+
+            LevelObject candy = vm.PlaceObject("candy", 100, 120)!;
+            vm.SelectedObject = candy;
+
+            AttributeFieldViewModel field = vm.Fields.Single(f => f.Name == "candyNumber");
+            Assert.Equal("0", field.Value);
+        }
+
+        /// <summary>Length and radius are magnitudes: their numeric box refuses negatives; x/y still allow them.</summary>
+        [Fact]
+        public void LengthAndRadiusForbidNegativesButCoordsAllow()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.Equal(0, vm.Fields.Single(f => f.Name == "length").NumericMinimum);
+            Assert.Equal(-9999, vm.Fields.Single(f => f.Name == "x").NumericMinimum);
+
+            vm.Fields.Single(f => f.Name == "autoCatch").BoolValue = true;
+            Assert.Equal(0, vm.Fields.Single(f => f.Name == "radius").NumericMinimum);
+        }
+
+        /// <summary>Auto-catch greys out Attach-to: an auto-catch grab binds candy at runtime, not by number.</summary>
+        [Fact]
+        public void AutoCatchGraysOutAttachTo()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 200, 200);
+            _ = vm.PlaceObject("candy", 300, 200);
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            vm.SelectedObject = grab;
+
+            Assert.True(vm.Fields.Single(f => f.Name == "attachTo").IsEnabled);
+
+            vm.Fields.Single(f => f.Name == "autoCatch").BoolValue = true;
+
+            Assert.False(vm.Fields.Single(f => f.Name == "attachTo").IsEnabled);
+        }
+
+        /// <summary>Gun greys out the Attach-to control rather than removing it, avoiding a layout shift.</summary>
+        [Fact]
+        public void GunGraysOutAttachToInsteadOfHiding()
+        {
+            EditorViewModel vm = Vm();
+            vm.NewLevel(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+            _ = vm.PlaceObject("candy", 200, 200);
+            _ = vm.PlaceObject("lightBulb", 300, 200);
+            LevelObject grab = vm.PlaceObject("grab", 100, 120)!;
+            grab.SetAttr("bindBulb", "true");
+            vm.SelectedObject = grab;
+
+            Assert.True(vm.Fields.Single(f => f.Name == "attachTo").IsEnabled);
+
+            vm.Fields.Single(f => f.Name == "gun").BoolValue = true;
+
+            Assert.Contains(vm.Fields, f => f.Name == "attachTo");
+            Assert.False(vm.Fields.Single(f => f.Name == "attachTo").IsEnabled);
         }
     }
 }

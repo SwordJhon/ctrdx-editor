@@ -17,14 +17,14 @@ namespace CtrDxEditor.Core.Tests
             return new(XElement.Parse(xml));
         }
 
-        /// <summary>Verifies that singleton target descriptors are full once one target exists.</summary>
+        /// <summary>Verifies that target descriptors remain placeable with an existing target.</summary>
         [Fact]
-        public void TargetIsAtCapacityOnceOneExists()
+        public void TargetIsNeverAtCapacity()
         {
             ObjectDescriptor target = DescriptorTable.Default.For("target")!;
             IReadOnlyList<LevelObject> objects = [Obj("""<target x="1" y="2" />""")];
 
-            Assert.True(Cardinality.IsAtCapacity(target, objects));
+            Assert.False(Cardinality.IsAtCapacity(target, objects));
         }
 
         /// <summary>Verifies that unbounded star descriptors remain placeable with existing stars.</summary>
@@ -39,6 +39,22 @@ namespace CtrDxEditor.Core.Tests
             ];
 
             Assert.False(Cardinality.IsAtCapacity(star, objects));
+        }
+
+        /// <summary>Candy and target are unbounded so multi-candy / multi-Om-Nom levels are placeable.</summary>
+        [Fact]
+        public void CandyAndTargetAreNeverAtCapacity()
+        {
+            ObjectDescriptor candy = DescriptorTable.Default.For("candy")!;
+            ObjectDescriptor target = DescriptorTable.Default.For("target")!;
+            IReadOnlyList<LevelObject> objects =
+            [
+                Obj("""<candy x="1" y="1" />"""),
+                Obj("""<target x="2" y="2" />"""),
+            ];
+
+            Assert.False(Cardinality.IsAtCapacity(candy, objects));
+            Assert.False(Cardinality.IsAtCapacity(target, objects));
         }
     }
 }

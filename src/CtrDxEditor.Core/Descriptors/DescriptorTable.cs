@@ -25,8 +25,11 @@ namespace CtrDxEditor.Core.Descriptors
         /// <summary>Built-in descriptor set for the currently supported editor objects.</summary>
         public static DescriptorTable Default { get; } = new(
         [
-            new ObjectDescriptor("target", "Om Nom", [], MaxCount: 1),
-            new ObjectDescriptor("candy", "Candy", [], MaxCount: 1),
+            new ObjectDescriptor("target", "Om Nom", [], MaxCount: int.MaxValue),
+            new ObjectDescriptor("candy", "Candy",
+            [
+                new AttributeSpec("candyNumber", AttrType.Text, null),
+            ], MaxCount: int.MaxValue),
             new ObjectDescriptor("candyL", "Candy (Left)", [], MaxCount: 1),
             new ObjectDescriptor("candyR", "Candy (Right)", [], MaxCount: 1),
             new ObjectDescriptor("star", "Star",
@@ -44,13 +47,16 @@ namespace CtrDxEditor.Core.Descriptors
                 new AttributeSpec("moveVertical", AttrType.Bool, "false"),
                 new AttributeSpec("moveOffset", AttrType.Whole, "0"),
                 new AttributeSpec("spider", AttrType.Bool, "false"),
+                new AttributeSpec("kickable", AttrType.Bool, "false"),
+                new AttributeSpec("kicked", AttrType.Bool, "false"),
+                new AttributeSpec("invisible", AttrType.Bool, "false"),
             ], MaxCount: int.MaxValue),
             new ObjectDescriptor("bubble", "Bubble", [], MaxCount: int.MaxValue),
             new ObjectDescriptor("gravitySwitch", "Gravity Switch", [], MaxCount: int.MaxValue),
             new ObjectDescriptor("lightBulb", "Light Bulb",
             [
                 new AttributeSpec("litRadius", AttrType.Whole, "50"),
-                new AttributeSpec("bulbNumber", AttrType.Text, "first"),
+                new AttributeSpec("bulbNumber", AttrType.Text, null),
             ], MaxCount: int.MaxValue),
         ]);
     }

@@ -208,16 +208,32 @@ namespace CtrDxEditor.ViewModels
 
         partial void OnSelectedObjectChanged(LevelObject? value)
         {
+            PopulateFields(value);
+        }
+
+        // Central field construction; re-invoked when a structural grab toggle changes so
+        // disclosure and gating re-evaluate.
+        private void PopulateFields(LevelObject? value)
+        {
             Fields.Clear();
             if (value is null)
             {
                 return;
             }
 
-            void Changed() => ObjectMutated?.Invoke();
+            void Changed()
+            {
+                ObjectMutated?.Invoke();
+            }
 
-            Fields.Add(new AttributeFieldViewModel(value, "x", null, Changed));
-            Fields.Add(new AttributeFieldViewModel(value, "y", null, Changed));
+            Fields.Add(new AttributeFieldViewModel(value, "x", AttrType.Whole, null, Changed));
+            Fields.Add(new AttributeFieldViewModel(value, "y", AttrType.Whole, null, Changed));
+
+            if (value.Type == "grab" && Document is not null)
+            {
+                GrabFieldBuilder.Build(Fields, value, Document, Changed, () => PopulateFields(value));
+                return;
+            }
 
             ObjectDescriptor? d = _descriptors.For(value.Type);
             if (d is not null)
@@ -228,7 +244,7 @@ namespace CtrDxEditor.ViewModels
                     {
                         continue;
                     }
-                    Fields.Add(new AttributeFieldViewModel(value, spec.Name, spec.EnumValues, Changed));
+                    Fields.Add(new AttributeFieldViewModel(value, spec.Name, spec.Type, spec.EnumValues, Changed));
                 }
             }
         }

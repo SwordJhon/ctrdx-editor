@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -136,7 +137,19 @@ namespace CtrDxEditor.Rendering
         /// <summary>Callback raised when a canvas drag moves the selected object, so bound views can refresh.</summary>
         public Action? SelectedObjectMoved { get; set; }
 
+        // Hovering / dragging the auto-catch radius ring, or a horizontal rail end/hook, uses a horizontal-
+        // resize cursor (col-resize); a vertical rail end/hook uses the vertical one.
+        private static readonly Cursor ResizeCursor = new(StandardCursorType.SizeWestEast);
+        private static readonly Cursor VResizeCursor = new(StandardCursorType.SizeNorthSouth);
+
         private bool _dragging;
+        private bool _resizingRadius;
+        // Which movable-rail handle the current drag is manipulating (slide the hook or resize an end);
+        // None when no rail drag is in progress. A MoveBar drag routes through _dragging instead.
+        private GrabRail.Handle _railDrag;
+        // Whether the pointer is hovering the selected grab's hook, so it shows the highlight art even
+        // before a drag begins (the game highlights the mover on interaction).
+        private bool _hookHovered;
         private Vec2 _dragOffset;
         private int _lastHitIndex = -1;
         private bool _panning;
@@ -314,12 +327,31 @@ namespace CtrDxEditor.Rendering
             }
 
             IReadOnlyList<LevelObject> objects = doc.Objects;
-            RopeRenderer.Draw(context, v, sprites, doc, new Rect(Bounds.Size));
 
+            // Ropes are interleaved per grab - each grab draws its hook's back art, then its rope, then the
+            // hook's front art - so the rope threads between the two hook layers the way the game does
+            // (Grab.DrawBack + Grab.Draw). Ropes with no target resolve to null and are skipped, keeping the
+            // per-rope seed (for seasonal light frames) in step with the grabs that actually have a rope.
+            Rect opBounds = new(Bounds.Size);
+            int ropeSeed = 0;
             foreach (LevelObject obj in objects)
             {
-                DrawObject(context, v, sprites, obj);
+                if (obj.Type == "grab")
+                {
+                    RopeVisual? rope = RopeRenderer.BuildRope(obj, objects, doc.TwoParts);
+                    DrawGrab(context, v, sprites, obj, objects, doc.TwoParts, rope, ropeSeed, opBounds);
+                    if (rope is not null)
+                    {
+                        ropeSeed++;
+                    }
+                }
+                else
+                {
+                    DrawObject(context, v, sprites, obj);
+                }
             }
+
+            GrabRenderer.DrawRadiusRings(context, v, objects);
 
             if (ShowHitboxes || ShowMobileHitboxes)
             {
@@ -369,7 +401,14 @@ namespace CtrDxEditor.Rendering
         // untrimmed sourceSize box (which is much larger than what the player sees).
         private static LevelBounds SelectionBounds(SpriteCache sprites, LevelObject obj)
         {
-            ObjectSprite? sprite = sprites.GetSprite(obj.Type);
+            // A movable grab's marquee / click target wraps the whole rail, not just the hook, so it can
+            // be selected by clicking anywhere along the bar.
+            if (GrabRenderer.DrawsMovableRail(obj) && GrabRail.Of(obj) is { } rail)
+            {
+                return GrabRenderer.RailBounds(rail);
+            }
+
+            ObjectSprite? sprite = sprites.GetSprite(GrabRenderer.SpriteKey(obj));
             if (sprite is null || sprite.Layers.Count == 0)
             {
                 return new LevelBounds(obj.X - 8, obj.Y - 8, 16, 16);
@@ -391,9 +430,11 @@ namespace CtrDxEditor.Rendering
             return new LevelBounds(minX - (w * grow / 2.0), minY - (h * grow / 2.0), w * (1 + grow), h * (1 + grow));
         }
 
+        // Draws a non-grab object: its optional decorative back-layer variant, then every sprite layer,
+        // then any overlays. Grabs go through DrawGrab instead so their rope can slot between hook layers.
         private static void DrawObject(DrawingContext ctx, ViewTransform v, SpriteCache sprites, LevelObject obj)
         {
-            ObjectSprite? sprite = sprites.GetSprite(obj.Type);
+            ObjectSprite? sprite = sprites.GetSprite(GrabRenderer.SpriteKey(obj));
             if (sprite is not null)
             {
                 if (sprite.Variants.Count > 0)
@@ -401,6 +442,136 @@ namespace CtrDxEditor.Rendering
                     DrawLayer(ctx, v, sprite.Variants[SpriteVariantPicker.Pick(obj.Element, sprite.Variants.Count)], obj.X, obj.Y, sprite.Scale);
                 }
                 DrawSprite(ctx, v, sprite, obj.X, obj.Y);
+            }
+            DrawOverlays(ctx, v, sprites, obj, obj.X, obj.Y);
+        }
+
+        // A pale grab is one the game hides outright (invisible="true"); the editor keeps it visible at
+        // this opacity so it stays selectable and editable rather than vanishing.
+        private const double InvisibleGrabOpacity = 0.3;
+
+        // Draws a grab with its rope threaded between the hook's back and front art, matching the game's
+        // Grab.DrawBack (back art) then Grab.Draw (rope, then front art) order. An invisible grab (hidden
+        // entirely in-game) is drawn pale so it can still be selected. A movable grab splits into its rail
+        // bar (back) and movable hook (front); every other grab splits its sprite layers by
+        // GrabRenderer.BackLayerCount. rope is null when the grab has nothing to hang from.
+        private void DrawGrab(
+            DrawingContext ctx,
+            ViewTransform v,
+            SpriteCache sprites,
+            LevelObject obj,
+            IReadOnlyList<LevelObject> objects,
+            bool twoParts,
+            RopeVisual? rope,
+            int ropeSeed,
+            Rect opBounds)
+        {
+            // The hook art and Christmas lights are DrawImage calls that PushOpacity fades; the rope is a
+            // Skia custom draw op that PushOpacity does not reach, so its alpha is passed through explicitly.
+            double opacity = IsInvisible(obj) ? InvisibleGrabOpacity : 1.0;
+            if (opacity < 1.0)
+            {
+                using (ctx.PushOpacity(opacity))
+                {
+                    DrawGrabContent(ctx, v, sprites, obj, objects, twoParts, rope, ropeSeed, opBounds, opacity);
+                }
+            }
+            else
+            {
+                DrawGrabContent(ctx, v, sprites, obj, objects, twoParts, rope, ropeSeed, opBounds, opacity);
+            }
+        }
+
+        private static bool IsInvisible(LevelObject obj)
+        {
+            return bool.TryParse(obj.GetAttr("invisible"), out bool b) && b;
+        }
+
+        private void DrawGrabContent(
+            DrawingContext ctx,
+            ViewTransform v,
+            SpriteCache sprites,
+            LevelObject obj,
+            IReadOnlyList<LevelObject> objects,
+            bool twoParts,
+            RopeVisual? rope,
+            int ropeSeed,
+            Rect opBounds,
+            double ropeOpacity)
+        {
+            if (GrabRenderer.DrawsMovableRail(obj) && GrabRail.Of(obj) is { } rail)
+            {
+                // Highlight the hook while it's hovered or being slid, matching the game's mover art.
+                bool active = (_railDrag == GrabRail.Handle.SlideHook || _hookHovered) && Equals(obj, SelectedObject);
+                GrabRenderer.DrawMovableRail(ctx, v, sprites, rail);
+                if (rope is not null)
+                {
+                    RopeRenderer.DrawRope(ctx, v, sprites, rope, ropeSeed, opBounds, ropeOpacity);
+                }
+                GrabRenderer.DrawMovableHook(ctx, v, sprites, rail, active);
+                Vec2 anchor = GrabRenderer.SpiderOverlayAnchor(obj);
+                DrawOverlays(ctx, v, sprites, obj, anchor.X, anchor.Y);
+                return;
+            }
+
+            ObjectSprite? sprite = sprites.GetSprite(GrabRenderer.SpriteKey(obj));
+            if (sprite is not null)
+            {
+                if (sprite.Variants.Count > 0)
+                {
+                    DrawLayer(ctx, v, sprite.Variants[SpriteVariantPicker.Pick(obj.Element, sprite.Variants.Count)], obj.X, obj.Y, sprite.Scale);
+                }
+                int back = Math.Min(GrabRenderer.BackLayerCount(obj), sprite.Layers.Count);
+                DrawGrabLayers(ctx, v, sprite, obj, objects, twoParts, 0, back);
+                if (rope is not null)
+                {
+                    RopeRenderer.DrawRope(ctx, v, sprites, rope, ropeSeed, opBounds, ropeOpacity);
+                }
+                DrawGrabLayers(ctx, v, sprite, obj, objects, twoParts, back, sprite.Layers.Count);
+            }
+            else if (rope is not null)
+            {
+                RopeRenderer.DrawRope(ctx, v, sprites, rope, ropeSeed, opBounds, ropeOpacity);
+            }
+            DrawOverlays(ctx, v, sprites, obj, obj.X, obj.Y);
+        }
+
+        // Draws the sprite layers in [from, to), applying the gun's aim rotation to the arrow layer
+        // (index 1) when this grab previews a gun aim - the same rotation the old single-pass path used.
+        private static void DrawGrabLayers(
+            DrawingContext ctx,
+            ViewTransform v,
+            ObjectSprite sprite,
+            LevelObject obj,
+            IReadOnlyList<LevelObject> objects,
+            bool twoParts,
+            int from,
+            int to)
+        {
+            double? gunAim = sprite.Layers.Count >= 3
+                ? GrabRenderer.GunAimRotationDegrees(obj, objects, twoParts)
+                : null;
+            for (int i = from; i < to; i++)
+            {
+                double? rotation = gunAim is double deg && i == 1 ? deg : null;
+                DrawLayer(ctx, v, sprite.Layers[i], obj.X, obj.Y, sprite.Scale, rotation);
+            }
+        }
+
+        private static void DrawOverlays(
+            DrawingContext ctx,
+            ViewTransform v,
+            SpriteCache sprites,
+            LevelObject obj,
+            double x,
+            double y)
+        {
+            foreach (string overlayKey in GrabRenderer.OverlaySpriteKeys(obj))
+            {
+                if (sprites.GetSprite(overlayKey) is { } overlay)
+                {
+                    DrawSprite(ctx, v, overlay, x, y);
+                }
             }
         }
 
@@ -418,13 +589,29 @@ namespace CtrDxEditor.Rendering
             SpriteLayerDraw layer,
             double x,
             double y,
-            double scale)
+            double scale,
+            double? rotationDegrees = null)
         {
             SpriteLayout layout = SpritePlacement.Compute(layer.Frame, x, y, scale);
             Rect source = new(layout.Source.X, layout.Source.Y, layout.Source.W, layout.Source.H);
             Vec2 dtl = v.LevelToScreen(new Vec2(layout.Dest.X, layout.Dest.Y));
             Vec2 dbr = v.LevelToScreen(new Vec2(layout.Dest.X + layout.Dest.W, layout.Dest.Y + layout.Dest.H));
-            ctx.DrawImage(layer.Bitmap, source, new Rect(dtl.X, dtl.Y, dbr.X - dtl.X, dbr.Y - dtl.Y));
+            Rect dest = new(dtl.X, dtl.Y, dbr.X - dtl.X, dbr.Y - dtl.Y);
+            if (rotationDegrees is double degrees)
+            {
+                Vec2 center = v.LevelToScreen(new Vec2(x, y));
+                Matrix m = Matrix.CreateTranslation(-center.X, -center.Y)
+                    * Matrix.CreateRotation(degrees * Math.PI / 180.0)
+                    * Matrix.CreateTranslation(center.X, center.Y);
+                using (ctx.PushTransform(m))
+                {
+                    ctx.DrawImage(layer.Bitmap, source, dest);
+                }
+            }
+            else
+            {
+                ctx.DrawImage(layer.Bitmap, source, dest);
+            }
         }
 
         private static void DrawHitbox(
@@ -443,6 +630,90 @@ namespace CtrDxEditor.Rendering
             Vec2 br = v.LevelToScreen(new Vec2(b.X + b.W, b.Y + b.H));
             Pen pen = new(brush, 1.5) { DashStyle = new DashStyle([4, 3], 0) };
             ctx.DrawRectangle(null, pen, new Rect(tl.X, tl.Y, br.X - tl.X, br.Y - tl.Y));
+        }
+
+        // Whether a level-space point sits on the selected grab's auto-catch radius ring, within a
+        // ~6px screen tolerance (converted to level units by the current zoom).
+        private bool OnRadiusEdge(Vec2 levelPt)
+        {
+            return SelectedObject is { Type: "grab" } g && View.Zoom > 0 && GrabRadius.Of(g) is double r && GrabRadius.OnEdge(new Vec2(g.X, g.Y), r, levelPt, 6 / View.Zoom);
+        }
+
+        // What part of the selected movable grab's rail a level point is over, or None. The hit-testing
+        // itself lives in GrabRail; here we only supply the selected grab's geometry and the screen-derived
+        // tolerances: ~9 px for the end caps, the hook's own footprint, and the bar's half thickness.
+        private GrabRail.Handle HitRail(Vec2 levelPt)
+        {
+            return SelectedObject is { Type: "grab" } sel
+                && View.Zoom > 0
+                && GrabRenderer.DrawsMovableRail(sel)
+                && GrabRail.Of(sel) is { } g
+                ? GrabRail.HitTest(g, levelPt, endTolerance: 9 / View.Zoom, hookTolerance: 24, barThickness: 20)
+                : GrabRail.Handle.None;
+        }
+
+        // Applies the active rail drag to the grab: sliding moves the hook (object x/y) and its offset
+        // together so the rail stays put; resizing an end rewrites moveLength (and moveOffset for the near
+        // end). All constrained by GrabRail so the hook never leaves the rail.
+        private void ApplyRailDrag(LevelObject grab, GrabRail.Geometry g, Vec2 levelPt)
+        {
+            switch (_railDrag)
+            {
+                case GrabRail.Handle.SlideHook:
+                    (double hookAxis, double offset) = GrabRail.SlideHook(g, levelPt);
+                    if (g.Vertical)
+                    {
+                        grab.Y = (int)Math.Round(hookAxis);
+                    }
+                    else
+                    {
+                        grab.X = (int)Math.Round(hookAxis);
+                    }
+                    grab.SetAttr("moveOffset", Whole(offset));
+                    break;
+                case GrabRail.Handle.ResizeEnd:
+                    grab.SetAttr("moveLength", Whole(GrabRail.ResizeEnd(g, levelPt)));
+                    break;
+                case GrabRail.Handle.ResizeStart:
+                    (double offA, double length) = GrabRail.ResizeStart(g, levelPt);
+                    grab.SetAttr("moveOffset", Whole(offA));
+                    grab.SetAttr("moveLength", Whole(length));
+                    break;
+                case GrabRail.Handle.MoveBar:
+                case GrabRail.Handle.None:
+                default:
+                    break;
+            }
+        }
+
+        private static string Whole(double value)
+        {
+            return ((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        // The cursor for a rail handle: a horizontal rail end/hook reads as a horizontal resize, a vertical
+        // one as a vertical resize (the hook slides along the same axis). The bar keeps the default arrow -
+        // it is still draggable to move the whole grab, but a move cursor over the whole rail is noisy.
+        private Cursor CursorForHandle(GrabRail.Handle handle)
+        {
+            return handle switch
+            {
+                GrabRail.Handle.ResizeStart or GrabRail.Handle.ResizeEnd or GrabRail.Handle.SlideHook =>
+                    SelectedObject is { } s && GrabRail.Vertical(s) ? VResizeCursor : ResizeCursor,
+                GrabRail.Handle.MoveBar => Cursor.Default,
+                GrabRail.Handle.None => Cursor.Default,
+                _ => Cursor.Default,
+            };
+        }
+
+        // Updates the hook hover state, repainting only on a change so the highlight art swaps in/out.
+        private void SetHookHovered(bool hovered)
+        {
+            if (_hookHovered != hovered)
+            {
+                _hookHovered = hovered;
+                InvalidateVisual();
+            }
         }
 
         private static int IndexOf(IReadOnlyList<LevelObject> objects, LevelObject target)
@@ -494,6 +765,37 @@ namespace CtrDxEditor.Rendering
 
             Point p = e.GetPosition(this);
             Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
+
+            // Grabbing the auto-catch ring resizes the radius; it takes priority over object hit-testing
+            // (the ring can sit over other objects) but not over a middle-button pan.
+            if (OnRadiusEdge(levelPt))
+            {
+                _resizingRadius = true;
+                e.Pointer.Capture(this);
+                return;
+            }
+
+            // Grabbing the selected movable grab's rail: an end cap resizes, the hook slides, the bar moves
+            // the whole grab. Takes priority over hit-testing so the rail wins over anything beneath it.
+            GrabRail.Handle handle = HitRail(levelPt);
+            switch (handle)
+            {
+                case GrabRail.Handle.ResizeStart:
+                case GrabRail.Handle.ResizeEnd:
+                case GrabRail.Handle.SlideHook:
+                    _railDrag = handle;
+                    e.Pointer.Capture(this);
+                    return;
+                case GrabRail.Handle.MoveBar:
+                    _dragOffset = levelPt - new Vec2(SelectedObject!.X, SelectedObject.Y);
+                    _dragging = true;
+                    e.Pointer.Capture(this);
+                    return;
+                case GrabRail.Handle.None:
+                default:
+                    break;
+            }
+
             List<LevelBounds> bounds = BuildHitBounds(doc);
 
             // Double-click toggles the lock. ClickCount keeps climbing (3, 4, ...) while clicking in the
@@ -550,21 +852,43 @@ namespace CtrDxEditor.Rendering
         protected override void OnPointerMoved(PointerEventArgs e)
         {
             base.OnPointerMoved(e);
+            Point p = e.GetPosition(this);
+            Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
+
+            if (_resizingRadius && SelectedObject is { } g)
+            {
+                double r = GrabRadius.FromDrag(new Vec2(g.X, g.Y), levelPt);
+                g.SetAttr("radius", ((int)Math.Round(r)).ToString(CultureInfo.InvariantCulture));
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                return;
+            }
+
+            if (_railDrag != GrabRail.Handle.None && SelectedObject is { } rg && GrabRail.Of(rg) is { } rail)
+            {
+                ApplyRailDrag(rg, rail, levelPt);
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                return;
+            }
+
             if (_panning)
             {
-                Point now = e.GetPosition(this);
-                ScrollBy(_panLast.X - now.X, _panLast.Y - now.Y);
-                _panLast = now;
+                ScrollBy(_panLast.X - p.X, _panLast.Y - p.Y);
+                _panLast = p;
                 return;
             }
 
             if (!_dragging || SelectedObject is not { } selected)
             {
+                // Reflect the affordance under the cursor so ring resize / rail edit are discoverable, and
+                // light up the hook when it's hovered.
+                GrabRail.Handle handle = HitRail(levelPt);
+                SetHookHovered(handle == GrabRail.Handle.SlideHook);
+                Cursor = OnRadiusEdge(levelPt) ? ResizeCursor : CursorForHandle(handle);
                 return;
             }
 
-            Point p = e.GetPosition(this);
-            Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
             (int gx, int gy) = Snap(levelPt - _dragOffset);
             selected.X = gx;
             selected.Y = gy;
@@ -578,7 +902,18 @@ namespace CtrDxEditor.Rendering
             base.OnPointerReleased(e);
             _dragging = false;
             _panning = false;
+            _resizingRadius = false;
+            _railDrag = GrabRail.Handle.None;
+            // Letting go ends the "grabbed" look; a fresh hover re-lights it if the cursor is on the hook.
+            SetHookHovered(false);
             e.Pointer.Capture(null);
+        }
+
+        /// <inheritdoc />
+        protected override void OnPointerExited(PointerEventArgs e)
+        {
+            base.OnPointerExited(e);
+            SetHookHovered(false); // don't leave the hook lit when the cursor leaves the canvas
         }
 
         /// <inheritdoc />

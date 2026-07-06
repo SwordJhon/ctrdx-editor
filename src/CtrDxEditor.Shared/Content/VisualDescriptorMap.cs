@@ -10,6 +10,12 @@ namespace CtrDxEditor.Content
         private const string CandyImageBase = "images/candies/obj_candy_01_new";
         private const string HookJson = "images/obj_hook.json";
         private const string HookImageBase = "images/obj_hook";
+        private const string GunJson = "images/obj_gun.json";
+        private const string GunImageBase = "images/obj_gun";
+        private const string SpiderJson = "images/obj_spider.json";
+        private const string SpiderImageBase = "images/obj_spider";
+        private const string StickerJson = "images/obj_sticker.json";
+        private const string StickerImageBase = "images/obj_sticker";
         private const string BubbleJson = "images/obj_bubble.json";
         private const string BubbleImageBase = "images/obj_bubble";
         private const string LighterJson = "images/obj_lighter.json";
@@ -48,6 +54,75 @@ namespace CtrDxEditor.Content
             [
                 new SpriteLayer(HookJson, HookImageBase, "obj_hook_01_frame_0000.png"),
                 new SpriteLayer(HookJson, HookImageBase, "obj_hook_01_frame_0001.png"),
+            ]),
+
+            // Wheel grab = regulated hook wheel art. The game draws the base wheel first, then the
+            // variable/idle wheel face in front; the editor uses the idle face for a stable preview.
+            new("grab_wheel",
+            [
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_regulated_frame_0000.png"),
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_regulated_frame_0001.png"),
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_regulated_frame_0003.png"),
+            ]),
+
+            // Gun grab = back, aim arrow, and front cap from the gun atlas.
+            new("grab_gun",
+            [
+                new SpriteLayer(GunJson, GunImageBase, "frame_00_GunBackQuad.png"),
+                new SpriteLayer(GunJson, GunImageBase, "frame_01_GunArrowQuad.png"),
+                new SpriteLayer(GunJson, GunImageBase, "frame_02_GunFrontQuad.png"),
+            ]),
+
+            // Spider grab = a static frame from the spider idle loop. In-game the spider animates along
+            // the rope; the editor keeps it centered on the authored grab point as a state marker.
+            new("grab_spider",
+            [
+                new SpriteLayer(SpiderJson, SpiderImageBase, "frame_0000.png"),
+            ]),
+
+            // Suction cup grab = sticker cup. Kicked=false uses quads 3/4; kicked=true uses
+            // quads 1/2 after updateKickState detaches the cup.
+            new("grab_suction",
+            [
+                new SpriteLayer(StickerJson, StickerImageBase, "frame_0003.png"),
+                new SpriteLayer(StickerJson, StickerImageBase, "frame_0004.png"),
+            ]),
+            new("grab_suction_kicked",
+            [
+                new SpriteLayer(StickerJson, StickerImageBase, "frame_0001.png"),
+                new SpriteLayer(StickerJson, StickerImageBase, "frame_0002.png"),
+            ]),
+
+            // Auto-catch grab = the auto-hook art (game HookAuto quads 4/5, back + front), used in place
+            // of the fixed hook when radius is positive. Not a placeable element; picked by grab state.
+            new("grab_auto",
+            [
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_auto_frame_0000.png"),
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_auto_frame_0001.png"),
+            ]),
+
+            // Movable-rail pieces (game HookMovable quads 6/8/7 = left cap, center tile, right cap). The
+            // canvas assembles these into a rail of arbitrary length; they are never drawn centered like a
+            // normal sprite, so the layer order here is left, center, right for the renderer to index.
+            new("grab_rail",
+            [
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_movable_frame_0000.png"),
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_movable_frame_0002.png"),
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_movable_frame_0001.png"),
+            ]),
+
+            // Movable-rail hook (game HookMovable quad 10), drawn at the hook rest point in place of the
+            // fixed hook when moveLength > 0. Not placeable; picked by grab state.
+            new("grab_movable",
+            [
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_movable_frame_0004.png"),
+            ]),
+
+            // Highlighted movable-rail hook (game HookMovable quad 9), shown in place of grab_movable while
+            // the mover is being dragged (game moverDragging != -1). Not placeable; picked by grab state.
+            new("grab_movable_highlight",
+            [
+                new SpriteLayer(HookJson, HookImageBase, "obj_hook_movable_frame_0003.png"),
             ]),
 
             // Bubble = attached quad 0 over one random attached outline, matching LoadBubble's
