@@ -193,6 +193,9 @@ namespace CtrDxEditor.Rendering
         private string? _ghostElement;
         private Vec2 _ghostLevel;
 
+        // Editor-chrome brushes/pens resolved from the theme once per theme change, not per Render.
+        private readonly CanvasPalette _palette = new();
+
         /// <summary>Creates the canvas and enables native touch gestures.</summary>
         public LevelCanvas()
         {
@@ -200,6 +203,27 @@ namespace CtrDxEditor.Rendering
             AddHandler(PinchEvent, Canvas_Pinch, RoutingStrategies.Bubble);
             AddHandler(PinchEndedEvent, Canvas_PinchEnded, RoutingStrategies.Bubble);
             AddHandler(PointerTouchPadGestureMagnifyEvent, Canvas_TouchPadMagnify, RoutingStrategies.Bubble);
+        }
+
+        /// <inheritdoc />
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            _palette.Refresh(this);
+            ActualThemeVariantChanged += OnActualThemeVariantChanged;
+        }
+
+        /// <inheritdoc />
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            ActualThemeVariantChanged -= OnActualThemeVariantChanged;
+            base.OnDetachedFromVisualTree(e);
+        }
+
+        private void OnActualThemeVariantChanged(object? sender, EventArgs e)
+        {
+            _palette.Refresh(this);
+            InvalidateVisual();
         }
 
         /// <inheritdoc />
@@ -336,7 +360,7 @@ namespace CtrDxEditor.Rendering
         {
             base.Render(context);
 
-            context.FillRectangle(new SolidColorBrush(Color.FromRgb(40, 44, 52)), new Rect(Bounds.Size));
+            context.FillRectangle(_palette.Background, new Rect(Bounds.Size));
 
             LevelDocument? doc = Document;
             SpriteCache? sprites = Sprites;
@@ -402,22 +426,21 @@ namespace CtrDxEditor.Rendering
                 }
             }
 
-            context.DrawRectangle(null, new Pen(Brushes.DimGray, 1),
+            context.DrawRectangle(null, _palette.LevelBorder,
                 new Rect(tl.X, tl.Y, br.X - tl.X, br.Y - tl.Y));
 
             int grid = doc.GridSize > 0 ? doc.GridSize : 32;
-            Pen gridPen = new(new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)), 1);
             for (int gx = 0; gx <= doc.Width; gx += grid)
             {
                 Vec2 a = v.LevelToScreen(new Vec2(gx, 0));
                 Vec2 b = v.LevelToScreen(new Vec2(gx, doc.Height));
-                context.DrawLine(gridPen, new Point(a.X, a.Y), new Point(b.X, b.Y));
+                context.DrawLine(_palette.Grid, new Point(a.X, a.Y), new Point(b.X, b.Y));
             }
             for (int gy = 0; gy <= doc.Height; gy += grid)
             {
                 Vec2 a = v.LevelToScreen(new Vec2(0, gy));
                 Vec2 b = v.LevelToScreen(new Vec2(doc.Width, gy));
-                context.DrawLine(gridPen, new Point(a.X, a.Y), new Point(b.X, b.Y));
+                context.DrawLine(_palette.Grid, new Point(a.X, a.Y), new Point(b.X, b.Y));
             }
 
             IReadOnlyList<LevelObject> objects = doc.Objects;
@@ -465,7 +488,7 @@ namespace CtrDxEditor.Rendering
                 }
             }
 
-            GrabRenderer.DrawRadiusRings(context, v, objects);
+            GrabRenderer.DrawRadiusRings(context, v, objects, _palette.GrabRadius, _palette.BulbRadius);
 
             if (ShowHitboxes || ShowMobileHitboxes)
             {
@@ -477,11 +500,11 @@ namespace CtrDxEditor.Rendering
                     }
                     if (ShowHitboxes)
                     {
-                        DrawHitbox(context, v, obj, sprite.Scale, HitboxModel.Desktop, Brushes.LimeGreen);
+                        DrawHitbox(context, v, obj, sprite.Scale, HitboxModel.Desktop, _palette.HitboxDesktop);
                     }
                     if (ShowMobileHitboxes)
                     {
-                        DrawHitbox(context, v, obj, sprite.Scale, HitboxModel.Phone, Brushes.Magenta);
+                        DrawHitbox(context, v, obj, sprite.Scale, HitboxModel.Phone, _palette.HitboxPhone);
                     }
                 }
             }
@@ -493,9 +516,7 @@ namespace CtrDxEditor.Rendering
                 Vec2 stl = v.LevelToScreen(new Vec2(sb.X, sb.Y));
                 Vec2 sbr = v.LevelToScreen(new Vec2(sb.X + sb.W, sb.Y + sb.H));
                 // Both boxes are dashed; a locked object is red, an unlocked one blue.
-                Pen pen = Equals(LockedObject, selected)
-                    ? new Pen(Brushes.Red, 2) { DashStyle = new DashStyle([4, 3], 0) }
-                    : new Pen(Brushes.DeepSkyBlue, 1.5) { DashStyle = new DashStyle([4, 3], 0) };
+                Pen pen = Equals(LockedObject, selected) ? _palette.ObjectLocked : _palette.ObjectSelected;
                 context.DrawRectangle(null, pen, new Rect(stl.X, stl.Y, sbr.X - stl.X, sbr.Y - stl.Y));
             }
 
@@ -756,7 +777,7 @@ namespace CtrDxEditor.Rendering
             LevelObject obj,
             double scale,
             HitboxModel model,
-            IBrush brush)
+            Pen pen)
         {
             if (HitboxTable.Compute(obj.Type, obj.X, obj.Y, scale, model) is not { } b)
             {
@@ -764,7 +785,6 @@ namespace CtrDxEditor.Rendering
             }
             Vec2 tl = v.LevelToScreen(new Vec2(b.X, b.Y));
             Vec2 br = v.LevelToScreen(new Vec2(b.X + b.W, b.Y + b.H));
-            Pen pen = new(brush, 1.5) { DashStyle = new DashStyle([4, 3], 0) };
             ctx.DrawRectangle(null, pen, new Rect(tl.X, tl.Y, br.X - tl.X, br.Y - tl.Y));
         }
 
