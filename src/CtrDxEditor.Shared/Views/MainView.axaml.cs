@@ -6,11 +6,14 @@ using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Notifications;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 using AvaloniaDialogs.Views;
@@ -30,6 +33,7 @@ namespace CtrDxEditor.Views
         private EditorViewModel? _mutatedSubscription;
         private readonly Action _invalidateCanvas;
         private IStorageFile? _currentLevelFile;
+        private WindowNotificationManager? _notifications;
 
         /// <summary>Creates the main editor view and wires input gestures.</summary>
         public MainView()
@@ -499,6 +503,100 @@ namespace CtrDxEditor.Views
             {
                 await SaveAsAsync(vm);
             }
+        }
+
+        private async void Screenshot_Click(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is not EditorViewModel vm || !vm.HasDocument)
+            {
+                return;
+            }
+
+            LevelCanvas canvas = this.FindControl<LevelCanvas>("Canvas")!;
+
+            string suggested = _currentLevelFile is { Name: { } name }
+                ? Path.ChangeExtension(name, ".png")
+                : "level.png";
+
+            // Pick the destination first, before doing any rendering, so the dialog opens instantly and the
+            // "Saving…" toast can appear the moment the user confirms - covering the render + encode below.
+            IStorageFile? file = await TopLevel.GetTopLevel(this)!.StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = Localizer.Get("Dialog.Screenshot.Title"),
+                    DefaultExtension = "png",
+                    SuggestedFileName = suggested,
+                    FileTypeChoices = [new FilePickerFileType(Localizer.Get("Dialog.FileType.Png")) { Patterns = ["*.png"] }],
+                });
+
+            if (file is null)
+            {
+                return;
+            }
+
+            WindowNotificationManager? toasts = Notifications();
+
+            // Show a sticky "Saving…" toast up front (Expiration.Zero = stays until replaced). The manager's
+            // MaxItems is 1, so the terminal "Saved"/"Failed" toast below evicts this one in place.
+            toasts?.Show(new Notification(
+                Localizer.Get("Notification.Screenshot.Saving"),
+                string.Empty,
+                NotificationType.Information,
+                expiration: TimeSpan.Zero));
+
+            // Yield below the render priority so the toast actually paints before the UI-thread render and
+            // the encode hog the thread - otherwise a fast save could finish before "Saving…" ever showed.
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+
+            try
+            {
+                // The bitmap must be rendered on the UI thread (Avalonia draws RenderTargetBitmap there);
+                // the encode+write is what we push off-thread. Disposed here - it holds a GPU surface.
+                using RenderTargetBitmap bitmap = canvas.RenderLevelToBitmap()
+                    ?? throw new InvalidOperationException("The level could not be rendered.");
+
+                // PNG encoding of a full-resolution level can take a noticeable amount of time. The bitmap
+                // is finished rendering and is not touched elsewhere, so encode + write it on a background
+                // thread to keep the editor responsive. (On the single-threaded browser runtime this still
+                // runs inline, but harmlessly.) The await resumes on the UI thread for the toast below.
+                await using Stream stream = await file.OpenWriteAsync();
+                await Task.Run(() => bitmap.Save(stream));
+            }
+            catch (Exception ex)
+            {
+                // Backgrounding the save means an encode/IO failure would otherwise go unobserved on this
+                // async void handler; surface it as a toast (which also clears the sticky "Saving…" one).
+                toasts?.Show(new Notification(
+                    Localizer.Get("Notification.Screenshot.Failed"),
+                    ex.Message,
+                    NotificationType.Error));
+                return;
+            }
+
+            // Confirm the save with a toast showing where it landed (a full local path on desktop, the
+            // download name in the browser where paths are not exposed).
+            string location = file.TryGetLocalPath() ?? file.Name;
+            toasts?.Show(new Notification(
+                Localizer.Get("Notification.Screenshot.Title"),
+                location,
+                NotificationType.Success));
+        }
+
+        // The toast host, created lazily against the current TopLevel and reused. Null only before the
+        // view is attached to a window, which cannot happen from a menu click.
+        private WindowNotificationManager? Notifications()
+        {
+            if (_notifications is null && TopLevel.GetTopLevel(this) is { } top)
+            {
+                _notifications = new WindowNotificationManager(top)
+                {
+                    Position = NotificationPosition.BottomRight,
+                    // One at a time: showing the terminal toast evicts the sticky "Saving…" one, so the
+                    // screenshot save reads as a single toast that updates in place.
+                    MaxItems = 1,
+                };
+            }
+            return _notifications;
         }
 
         private async Task SaveAsAsync(EditorViewModel vm)
