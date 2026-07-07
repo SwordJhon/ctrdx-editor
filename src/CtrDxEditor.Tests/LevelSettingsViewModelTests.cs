@@ -1,5 +1,7 @@
+using System;
 using System.Linq;
 
+using CtrDxEditor.Content;
 using CtrDxEditor.Core.Document;
 using CtrDxEditor.ViewModels;
 
@@ -10,6 +12,7 @@ namespace CtrDxEditor.Tests
     /// <summary>Tests the settings-dialog view model: presets, custom clamping, and mode.</summary>
     public class LevelSettingsViewModelTests
     {
+        /// <summary>New mode starts on the first preset (320×480) with flags editable and default settings.</summary>
         [Fact]
         public void NewModeDefaultsToFirstPresetAndEditableFlags()
         {
@@ -24,6 +27,7 @@ namespace CtrDxEditor.Tests
             Assert.False(s.TwoParts);
         }
 
+        /// <summary>Choosing a resolution preset applies its width and height.</summary>
         [Fact]
         public void SelectingPresetSetsResolution()
         {
@@ -35,6 +39,7 @@ namespace CtrDxEditor.Tests
             Assert.Equal(960, s.Height);
         }
 
+        /// <summary>Custom width and height are clamped to the allowed bounds.</summary>
         [Fact]
         public void CustomResolutionIsClampedToBounds()
         {
@@ -52,6 +57,7 @@ namespace CtrDxEditor.Tests
             Assert.Equal(480, vm.ToSettings().Height);
         }
 
+        /// <summary>Edit mode selects the preset matching the level's size and keeps flags editable.</summary>
         [Fact]
         public void EditModePrefillsMatchingPresetAndAllowsFlags()
         {
@@ -65,6 +71,7 @@ namespace CtrDxEditor.Tests
             Assert.Equal(480, vm.ToSettings().Height);
         }
 
+        /// <summary>Edit mode falls back to Custom when the level's size matches no preset.</summary>
         [Fact]
         public void EditModeWithNonPresetResolutionSelectsCustom()
         {
@@ -130,6 +137,173 @@ namespace CtrDxEditor.Tests
             vm.CustomSpecial = null; // special is on None, so the custom input is hidden
 
             Assert.True(vm.CanConfirm);
+        }
+
+        /// <summary>The mobile-physics flag flows into the produced settings.</summary>
+        [Fact]
+        public void ToSettingsIncludesMobilePhysics()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            vm.UseMobilePhysics = true;
+            Assert.True(vm.ToSettings().UseMobilePhysics);
+        }
+
+        /// <summary>Edit mode prefills the mobile-physics flag from the current level.</summary>
+        [Fact]
+        public void ForEditPrefillsMobilePhysics()
+        {
+            LevelSettings current = new(320, 480, 1.0f, 0, false, false, UseMobilePhysics: true);
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForEdit(current);
+            Assert.True(vm.UseMobilePhysics);
+        }
+
+        /// <summary>LoadDecoration prefills the rope skin, background, candy skin, and remember flag.</summary>
+        [Fact]
+        public void LoadDecorationPrefillsSelections()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            vm.LoadDecoration(new EditorSettings { RememberDecoration = true, RopeSkin = 3, Background = 4, CandySkin = 6, OmNomSupport = 10 });
+            Assert.Equal(3, vm.SelectedRopeSkin);
+            Assert.Equal(4, vm.SelectedBackground);
+            Assert.Equal(6, vm.SelectedCandySkin);
+            Assert.Equal(10, vm.SelectedOmNomSupport);
+            Assert.True(vm.RememberDecoration);
+        }
+
+        /// <summary>ResolveDecoration turns Random (-1) selections into concrete rope/background/candy/platform ids.</summary>
+        [Fact]
+        public void ResolveDecorationTurnsRandomIntoConcreteIds()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            vm.SelectedRopeSkin = -1;
+            vm.SelectedBackground = -1;
+            vm.SelectedCandySkin = -1;
+            vm.SelectedOmNomSupport = -1;
+            (int skin, int bg, int candy, int support) = vm.ResolveDecoration(new Random(1));
+            Assert.InRange(skin, 0, 8);
+            Assert.InRange(bg, 1, 17);
+            Assert.InRange(candy, 0, 51);
+            Assert.InRange(support, 0, 16);
+        }
+
+        /// <summary>When remembering, the raw selections (including Random) are written into settings.</summary>
+        [Fact]
+        public void WriteDecorationIntoRememberedSavesRawSelections()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            vm.SelectedRopeSkin = -1;
+            vm.SelectedBackground = 5;
+            vm.SelectedCandySkin = -1;
+            vm.SelectedOmNomSupport = -1;
+            vm.RememberDecoration = true;
+            EditorSettings settings = new() { RopeSkin = 0, Background = 1, CandySkin = 2, OmNomSupport = 3 };
+            vm.WriteDecorationInto(settings);
+            Assert.True(settings.RememberDecoration);
+            Assert.Equal(-1, settings.RopeSkin);
+            Assert.Equal(5, settings.Background);
+            Assert.Equal(-1, settings.CandySkin);
+            Assert.Equal(-1, settings.OmNomSupport);
+        }
+
+        /// <summary>When not remembering, saved ids are left untouched and only the remember flag clears.</summary>
+        [Fact]
+        public void WriteDecorationIntoNotRememberedLeavesIdsUntouched()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            vm.SelectedRopeSkin = 7;
+            vm.SelectedBackground = 6;
+            vm.SelectedCandySkin = 8;
+            vm.SelectedOmNomSupport = 9;
+            vm.RememberDecoration = false;
+            EditorSettings settings = new() { RememberDecoration = true, RopeSkin = 2, Background = 3, CandySkin = 4, OmNomSupport = 5 };
+            vm.WriteDecorationInto(settings);
+            Assert.False(settings.RememberDecoration);
+            Assert.Equal(2, settings.RopeSkin);
+            Assert.Equal(3, settings.Background);
+            Assert.Equal(4, settings.CandySkin);
+            Assert.Equal(5, settings.OmNomSupport);
+        }
+
+        /// <summary>The remember-as-default checkbox shows only when creating a level, not when editing.</summary>
+        [Fact]
+        public void ShowRememberDecorationNewOnly()
+        {
+            Assert.True(LevelSettingsViewModel.ForNew().ShowRememberDecoration);
+            Assert.False(LevelSettingsViewModel.ForEdit(new LevelSettings(320, 480, 1f, 0, false, false)).ShowRememberDecoration);
+        }
+
+        /// <summary>Edit mode seeds the decoration pickers from the editor's live rope/background/candy/platform ids.</summary>
+        [Fact]
+        public void ForEditPrefillsDecoration()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForEdit(
+                new LevelSettings(320, 480, 1f, 0, false, false), ropeSkin: 5, background: 7, candySkin: 9, omNomSupport: 11);
+            Assert.Equal(5, vm.SelectedRopeSkin);
+            Assert.Equal(7, vm.SelectedBackground);
+            Assert.Equal(9, vm.SelectedCandySkin);
+            Assert.Equal(11, vm.SelectedOmNomSupport);
+        }
+
+        /// <summary>Candy options run Candy 1 (id 0) first, all 52 skins, then Random last.</summary>
+        [Fact]
+        public void CandySkinOptionsCoverAllFiftyTwoAndRandom()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            int[] ids = [.. vm.CandySkinOptions.Select(o => o.Id)];
+            Assert.Equal(0, ids[0]);           // Candy 1 first
+            Assert.Equal(-1, ids[^1]);         // Random last
+            for (int i = 0; i < 52; i++)
+            {
+                Assert.Contains(i, ids);        // every candy skin 0..51
+            }
+        }
+
+        /// <summary>Platform options run Platform 1 (id 0) first, all 17 platforms, then Random last.</summary>
+        [Fact]
+        public void OmNomSupportOptionsCoverAllSeventeenAndRandom()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            int[] ids = [.. vm.OmNomSupportOptions.Select(o => o.Id)];
+            Assert.Equal(0, ids[0]);           // Platform 1 first
+            Assert.Equal(-1, ids[^1]);         // Random last
+            for (int i = 0; i < 17; i++)
+            {
+                Assert.Contains(i, ids);        // every platform 0..16
+            }
+        }
+
+        /// <summary>Background options run Blank first, then all 17 box backgrounds, then Random last.</summary>
+        [Fact]
+        public void BackgroundOptionsCoverBlankAllSeventeenAndRandom()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            int[] ids = [.. vm.BackgroundOptions.Select(o => o.Id)];
+            Assert.Equal(0, ids[0]);          // Blank first
+            Assert.Equal(-1, ids[^1]);        // Random last
+            for (int i = 1; i <= 17; i++)
+            {
+                Assert.Contains(i, ids);       // every box background
+            }
+        }
+
+        /// <summary>Setting the selected id marks the matching option and clears the others.</summary>
+        [Fact]
+        public void SelectingIdMarksMatchingOptionAndClearsOthers()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            vm.SelectedRopeSkin = 3;
+            Assert.True(vm.RopeSkinOptions.Single(o => o.Id == 3).IsSelected);
+            Assert.All(vm.RopeSkinOptions.Where(o => o.Id != 3), o => Assert.False(o.IsSelected));
+        }
+
+        /// <summary>Checking an option's IsSelected updates the selected id and clears the others.</summary>
+        [Fact]
+        public void CheckingAnOptionUpdatesTheSelectedId()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            vm.BackgroundOptions.Single(o => o.Id == 6).IsSelected = true;
+            Assert.Equal(6, vm.SelectedBackground);
+            Assert.All(vm.BackgroundOptions.Where(o => o.Id != 6), o => Assert.False(o.IsSelected));
         }
 
         /// <summary>An imported level's unlisted special value routes through Custom so it round-trips.</summary>

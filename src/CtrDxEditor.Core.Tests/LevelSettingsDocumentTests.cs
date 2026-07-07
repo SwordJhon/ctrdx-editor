@@ -18,6 +18,7 @@ namespace CtrDxEditor.Core.Tests
         </map>
         """;
 
+        /// <inheritdoc/>
         [Fact]
         public void ReadsGameDesignSettings()
         {
@@ -36,6 +37,7 @@ namespace CtrDxEditor.Core.Tests
             Assert.True(s.NightLevel);
         }
 
+        /// <inheritdoc/>
         [Fact]
         public void DefaultsWhenGameDesignMissing()
         {
@@ -47,6 +49,7 @@ namespace CtrDxEditor.Core.Tests
             Assert.False(doc.NightLevel);
         }
 
+        /// <inheritdoc/>
         [Fact]
         public void CreateNewProducesSettingsAndEmptyObjectsLayer()
         {
@@ -67,6 +70,7 @@ namespace CtrDxEditor.Core.Tests
             Assert.Contains("nightLevel=\"true\"", doc.Save());
         }
 
+        /// <inheritdoc/>
         [Fact]
         public void UpdateSettingsChangesResolutionSpecialAndFlags()
         {
@@ -82,6 +86,7 @@ namespace CtrDxEditor.Core.Tests
             Assert.False(doc.NightLevel);
         }
 
+        /// <inheritdoc/>
         [Fact]
         public void TurningOffTwoPartsUsesCandyLAsFullCandyAndRemovesCandyR()
         {
@@ -107,6 +112,40 @@ namespace CtrDxEditor.Core.Tests
                 target => Assert.Equal("target", target.Type));
         }
 
+        /// <inheritdoc/>
+        [Fact]
+        public void CreateNewWithMobilePhysicsWritesAttribute()
+        {
+            LevelDocument doc = LevelDocument.CreateNew(
+                new LevelSettings(320, 480, 1.0f, 0, false, false, UseMobilePhysics: true));
+            Assert.True(doc.UseMobilePhysics);
+            Assert.Contains("useMobilePhysics=\"true\"", doc.Save());
+        }
+
+        /// <inheritdoc/>
+        [Fact]
+        public void CreateNewWithoutMobilePhysicsOmitsAttribute()
+        {
+            LevelDocument doc = LevelDocument.CreateNew(
+                new LevelSettings(320, 480, 1.0f, 0, false, false, UseMobilePhysics: false));
+            Assert.False(doc.UseMobilePhysics);
+            Assert.DoesNotContain("useMobilePhysics", doc.Save());
+        }
+
+        /// <inheritdoc/>
+        [Fact]
+        public void UpdateSettingsTogglesMobilePhysicsBothWays()
+        {
+            LevelDocument doc = LevelDocument.CreateNew(
+                new LevelSettings(320, 480, 1.0f, 0, false, false, UseMobilePhysics: true));
+            doc.UpdateSettings(new LevelSettings(320, 480, 1.0f, 0, false, false, UseMobilePhysics: false));
+            Assert.False(doc.UseMobilePhysics);
+            Assert.DoesNotContain("useMobilePhysics", doc.Save());
+            doc.UpdateSettings(new LevelSettings(320, 480, 1.0f, 0, false, false, UseMobilePhysics: true));
+            Assert.True(doc.UseMobilePhysics);
+        }
+
+        /// <inheritdoc/>
         [Fact]
         public void TurningOnTwoPartsUsesCandyAsCandyLAndAddsCenteredCandyR()
         {

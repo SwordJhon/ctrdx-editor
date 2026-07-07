@@ -142,6 +142,10 @@
                             SnapEnabled="{Binding SnapEnabled}"
                             ShowHitboxes="{Binding ShowHitboxes}"
                             ShowMobileHitboxes="{Binding ShowMobileHitboxes}"
+                            ActiveRopeSkin="{Binding ActiveRopeSkin}"
+                            ActiveBackground="{Binding ActiveBackground}"
+                            ActiveCandySkin="{Binding ActiveCandySkin}"
+                            ActiveOmNomSupport="{Binding ActiveOmNomSupport}"
                             SelectedObject="{Binding SelectedObject, Mode=TwoWay}"
                             LockedObject="{Binding LockedObject, Mode=TwoWay}" />
         <ScrollBar Grid.Row="0" Grid.Column="1"

@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 
 using CtrDxEditor.Content;
 using CtrDxEditor.Core.Document;
@@ -52,6 +54,22 @@ namespace CtrDxEditor.Rendering
         public static readonly StyledProperty<bool> ShowMobileHitboxesProperty =
             AvaloniaProperty.Register<LevelCanvas, bool>(nameof(ShowMobileHitboxes));
 
+        /// <summary>Editor-decoration rope skin index applied to every rope (0 = default brown).</summary>
+        public static readonly StyledProperty<int> ActiveRopeSkinProperty =
+            AvaloniaProperty.Register<LevelCanvas, int>(nameof(ActiveRopeSkin));
+
+        /// <summary>Editor-decoration background id (0 = none, 1..7 = bgr_01..bgr_07).</summary>
+        public static readonly StyledProperty<int> ActiveBackgroundProperty =
+            AvaloniaProperty.Register<LevelCanvas, int>(nameof(ActiveBackground));
+
+        /// <summary>Editor-decoration candy skin index applied to candy sprites (0 = default candy).</summary>
+        public static readonly StyledProperty<int> ActiveCandySkinProperty =
+            AvaloniaProperty.Register<LevelCanvas, int>(nameof(ActiveCandySkin));
+
+        /// <summary>Editor-decoration Om Nom sitting platform index applied to the target (0 = default).</summary>
+        public static readonly StyledProperty<int> ActiveOmNomSupportProperty =
+            AvaloniaProperty.Register<LevelCanvas, int>(nameof(ActiveOmNomSupport));
+
         /// <summary>Avalonia property backing <see cref="HorizontalScrollMaximum"/>.</summary>
         public static readonly StyledProperty<double> HorizontalScrollMaximumProperty =
             AvaloniaProperty.Register<LevelCanvas, double>(nameof(HorizontalScrollMaximum));
@@ -83,7 +101,9 @@ namespace CtrDxEditor.Rendering
             AffectsRender<LevelCanvas>(
                 DocumentProperty, SpritesProperty, ViewProperty, SnapEnabledProperty,
                 SelectedObjectProperty, LockedObjectProperty,
-                ShowHitboxesProperty, ShowMobileHitboxesProperty);
+                ShowHitboxesProperty, ShowMobileHitboxesProperty,
+                ActiveRopeSkinProperty, ActiveBackgroundProperty, ActiveCandySkinProperty,
+                ActiveOmNomSupportProperty);
         }
 
         /// <summary>The loaded level document to render and edit.</summary>
@@ -109,6 +129,18 @@ namespace CtrDxEditor.Rendering
 
         /// <summary>Whether phone hitboxes are drawn over objects.</summary>
         public bool ShowMobileHitboxes { get => GetValue(ShowMobileHitboxesProperty); set => SetValue(ShowMobileHitboxesProperty, value); }
+
+        /// <summary>Editor-decoration rope skin index applied to every rope (0 = default brown).</summary>
+        public int ActiveRopeSkin { get => GetValue(ActiveRopeSkinProperty); set => SetValue(ActiveRopeSkinProperty, value); }
+
+        /// <summary>Editor-decoration background id (0 = none, 1..7 = bgr_01..bgr_07).</summary>
+        public int ActiveBackground { get => GetValue(ActiveBackgroundProperty); set => SetValue(ActiveBackgroundProperty, value); }
+
+        /// <summary>Editor-decoration candy skin index applied to candy sprites (0 = default candy).</summary>
+        public int ActiveCandySkin { get => GetValue(ActiveCandySkinProperty); set => SetValue(ActiveCandySkinProperty, value); }
+
+        /// <summary>Editor-decoration Om Nom sitting platform index applied to the target (0 = default).</summary>
+        public int ActiveOmNomSupport { get => GetValue(ActiveOmNomSupportProperty); set => SetValue(ActiveOmNomSupportProperty, value); }
 
         /// <summary>Largest horizontal scroll offset in screen pixels.</summary>
         public double HorizontalScrollMaximum { get => GetValue(HorizontalScrollMaximumProperty); private set => SetValue(HorizontalScrollMaximumProperty, value); }
@@ -291,6 +323,14 @@ namespace CtrDxEditor.Rendering
             }
         }
 
+        /// <summary>Maps a level-space rectangle (x, y, w, h) to its axis-aligned screen rectangle.</summary>
+        private static Rect LevelRectToScreen(ViewTransform v, double x, double y, double w, double h)
+        {
+            Vec2 tl = v.LevelToScreen(new Vec2(x, y));
+            Vec2 br = v.LevelToScreen(new Vec2(x + w, y + h));
+            return new Rect(tl.X, tl.Y, br.X - tl.X, br.Y - tl.Y);
+        }
+
         /// <inheritdoc />
         public override void Render(DrawingContext context)
         {
@@ -308,6 +348,60 @@ namespace CtrDxEditor.Rendering
             ViewTransform v = View;
             Vec2 tl = v.LevelToScreen(new Vec2(0, 0));
             Vec2 br = v.LevelToScreen(new Vec2(doc.Width, doc.Height));
+
+            // Editor-decoration background, drawn as the bottom layer so the level border and grid sit
+            // on top of it. The p1 column keeps its game width and aspect (GameScene.Draw scales it to
+            // the internal screen width) and stays centered on the map, so it extends past the level
+            // rect sideways rather than being cropped to it - but it's bounded to the level's own height
+            // (clipped top/bottom) so it doesn't repeat off into empty canvas. Horizontally it's a
+            // single column: the game repeats the background vertically only, never sideways. A p2
+            // overlay is drawn once for maps taller than one screen. BackgroundPlacement mirrors that.
+            Bitmap? bg = sprites.GetBackground(ActiveBackground);
+            if (bg is not null && bg.Size is { Width: > 0, Height: > 0 } bgSize)
+            {
+                Bitmap? p2 = sprites.GetBackgroundP2(ActiveBackground);
+                double p2Aspect = p2 is { Size: { Width: > 0 } p2s } ? p2s.Height / p2s.Width : 0.0;
+                BackgroundLayout layout = BackgroundPlacement.Compute(
+                    doc.Width, doc.Height, bgSize.Height / bgSize.Width,
+                    p2Aspect, SpriteCache.GetBackgroundP2Y(ActiveBackground),
+                    SpriteCache.GetEarthBgPosition(ActiveBackground));
+
+                // Clip vertically to the level's height (full canvas width, so the wide column still
+                // shows past the level sides), keeping the background within the level's own span.
+                using (context.PushClip(new Rect(0, tl.Y, Bounds.Width, br.Y - tl.Y)))
+                {
+                    if (layout.TileHeight > 0.5)
+                    {
+                        Rect bgSrc = new(bgSize);
+                        for (double ty = 0; ty < doc.Height; ty += layout.TileHeight)
+                        {
+                            context.DrawImage(bg, bgSrc, LevelRectToScreen(v, layout.Left, ty, layout.Width, layout.TileHeight));
+                        }
+                    }
+
+                    if (layout.P2 is { } p2b && p2 is not null)
+                    {
+                        context.DrawImage(p2, new Rect(p2.Size), LevelRectToScreen(v, p2b.X, p2b.Y, p2b.W, p2b.H));
+                    }
+
+                    // Cosmic box only: the earth sprite the game draws over the background (GameScene.Draw
+                    // earthAnims). Static here - the game's gravity-flip spin has no editor equivalent.
+                    // The game centers the trimmed quad directly on earthBgPosition (Image with anchor
+                    // CENTER and restoreCutTransparency off, so DrawQuad applies no trim offset), so place
+                    // the frame itself - not the untrimmed sourceSize box that SpritePlacement would use.
+                    if (layout.EarthCenter is { } ec && sprites.GetEarthArt() is { } earthArt)
+                    {
+                        IntRect ef = earthArt.Frame.Frame;
+                        double ew = ef.W / SpritePlacement.MapScale;
+                        double eh = ef.H / SpritePlacement.MapScale;
+                        context.DrawImage(
+                            earthArt.Bitmap,
+                            new Rect(ef.X, ef.Y, ef.W, ef.H),
+                            LevelRectToScreen(v, ec.X - (ew / 2.0), ec.Y - (eh / 2.0), ew, eh));
+                    }
+                }
+            }
+
             context.DrawRectangle(null, new Pen(Brushes.DimGray, 1),
                 new Rect(tl.X, tl.Y, br.X - tl.X, br.Y - tl.Y));
 
@@ -350,33 +444,24 @@ namespace CtrDxEditor.Rendering
                 context.Custom(new GlowDrawOperation(opBounds, v, glowLayer.Bitmap, glowLayer.Frame.Frame, glowBulbs));
             }
 
+            // Draw in the game's fixed z-order (GameScene.Draw) rather than level-list order, so a candy
+            // placed before a grab still sits above its rope. OrderBy is a stable sort, so objects sharing
+            // a layer keep their list order - this keeps the per-rope seed deterministic across grabs.
             int ropeSeed = 0;
-            foreach (LevelObject obj in objects)
+            foreach (LevelObject obj in objects.OrderBy(GameDrawLayer))
             {
                 if (obj.Type == "grab")
                 {
-                    RopeVisual? rope = RopeRenderer.BuildRope(obj, objects, doc.TwoParts);
+                    RopeVisual? rope = RopeRenderer.BuildRope(obj, objects, doc.TwoParts, ActiveRopeSkin);
                     DrawGrab(context, v, sprites, obj, objects, doc.TwoParts, rope, ropeSeed, opBounds);
                     if (rope is not null)
                     {
                         ropeSeed++;
                     }
                 }
-                else if (obj.Type != "lightBulb")
+                else
                 {
-                    DrawObject(context, v, sprites, obj);
-                }
-            }
-
-            // Light-bulb bottles draw in a pass of their own, above every rope, matching the game's
-            // order (GameScene.Draw: all bungee ropes first, then LightBulb.DrawBottleAndFirefly last).
-            // Drawing them inline would let a grab later in the object list paint its rope over an
-            // already-drawn bottle.
-            foreach (LevelObject obj in objects)
-            {
-                if (obj.Type == "lightBulb")
-                {
-                    DrawObject(context, v, sprites, obj);
+                    DrawObject(context, v, sprites, obj, ActiveCandySkin, ActiveOmNomSupport);
                 }
             }
 
@@ -404,7 +489,7 @@ namespace CtrDxEditor.Rendering
             LevelObject? selected = SelectedObject;
             if (selected is not null)
             {
-                LevelBounds sb = SelectionBounds(sprites, selected);
+                LevelBounds sb = SelectionBounds(sprites, selected, ActiveCandySkin, ActiveOmNomSupport);
                 Vec2 stl = v.LevelToScreen(new Vec2(sb.X, sb.Y));
                 Vec2 sbr = v.LevelToScreen(new Vec2(sb.X + sb.W, sb.Y + sb.H));
                 // Both boxes are dashed; a locked object is red, an unlocked one blue.
@@ -416,7 +501,7 @@ namespace CtrDxEditor.Rendering
 
             // Translucent ghost of the object being dragged from the palette, at its snapped drop spot.
             if (_ghostActive && _ghostElement is { } ghostElement
-                && sprites.GetSprite(ghostElement) is { } ghostSprite)
+                && sprites.GetSprite(ghostElement, ActiveCandySkin, ActiveOmNomSupport) is { } ghostSprite)
             {
                 using (context.PushOpacity(0.7))
                 {
@@ -428,7 +513,7 @@ namespace CtrDxEditor.Rendering
         // Selection marquee: the trimmed (visible) sprite bounds — the union of every layer's drawn
         // region — grown 25% so the dashed box sits a little outside the art rather than hugging the
         // untrimmed sourceSize box (which is much larger than what the player sees).
-        private static LevelBounds SelectionBounds(SpriteCache sprites, LevelObject obj)
+        private static LevelBounds SelectionBounds(SpriteCache sprites, LevelObject obj, int candySkin, int omNomSupport)
         {
             // A movable grab's marquee / click target wraps the whole rail, not just the hook, so it can
             // be selected by clicking anywhere along the bar.
@@ -437,7 +522,9 @@ namespace CtrDxEditor.Rendering
                 return GrabRenderer.RailBounds(rail);
             }
 
-            ObjectSprite? sprite = sprites.GetSprite(GrabRenderer.SpriteKey(obj));
+            // Pass the active decoration so the box matches the drawn art (candy skins and Om Nom
+            // platforms vary in trimmed size, which would otherwise mis-size the marquee / hit box).
+            ObjectSprite? sprite = sprites.GetSprite(GrabRenderer.SpriteKey(obj), candySkin, omNomSupport);
             if (sprite is null || sprite.Layers.Count == 0)
             {
                 return new LevelBounds(obj.X - 8, obj.Y - 8, 16, 16);
@@ -459,11 +546,31 @@ namespace CtrDxEditor.Rendering
             return new LevelBounds(minX - (w * grow / 2.0), minY - (h * grow / 2.0), w * (1 + grow), h * (1 + grow));
         }
 
+        // The game draws objects in a fixed z-order independent of level-list order (GameScene.Draw):
+        // gravity button, Om Nom + support, bubbles, bungee ropes, stars, candy, then light-bulb bottles.
+        // Same-layer objects keep their list order because OrderBy is stable. Unknown types sit with the
+        // grabs (mid-stack) as a neutral default.
+        private static int GameDrawLayer(LevelObject obj)
+        {
+            return obj.Type switch
+            {
+                "gravitySwitch" => 0,
+                "target" => 1,
+                "bubble" => 2,
+                "grab" => 3,
+                "star" => 4,
+                "candy" or "candyL" or "candyR" => 5,
+                "lightBulb" => 6,
+                _ => 3,
+            };
+        }
+
         // Draws a non-grab object: its optional decorative back-layer variant, then every sprite layer,
         // then any overlays. Grabs go through DrawGrab instead so their rope can slot between hook layers.
-        private static void DrawObject(DrawingContext ctx, ViewTransform v, SpriteCache sprites, LevelObject obj)
+        private static void DrawObject(
+            DrawingContext ctx, ViewTransform v, SpriteCache sprites, LevelObject obj, int candySkin, int omNomSupport)
         {
-            ObjectSprite? sprite = sprites.GetSprite(GrabRenderer.SpriteKey(obj));
+            ObjectSprite? sprite = sprites.GetSprite(GrabRenderer.SpriteKey(obj), candySkin, omNomSupport);
             if (sprite is not null)
             {
                 if (sprite.Variants.Count > 0)
@@ -766,7 +873,7 @@ namespace CtrDxEditor.Rendering
             {
                 list.Add(Sprites is null
                     ? new LevelBounds(o.X - 8, o.Y - 8, 16, 16)
-                    : SelectionBounds(Sprites, o));
+                    : SelectionBounds(Sprites, o, ActiveCandySkin, ActiveOmNomSupport));
             }
             return list;
         }
