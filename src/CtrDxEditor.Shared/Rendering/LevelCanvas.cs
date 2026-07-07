@@ -169,10 +169,21 @@ namespace CtrDxEditor.Rendering
         /// <summary>Callback raised when a canvas drag moves the selected object, so bound views can refresh.</summary>
         public Action? SelectedObjectMoved { get; set; }
 
+        /// <summary>Callback raised before a direct canvas edit begins, so the view model can capture undo state.</summary>
+        public Action? BeginDocumentEdit { get; set; }
+
+        /// <summary>Callback raised after a direct canvas edit ends, so the view model can commit undo state.</summary>
+        public Action? CompleteDocumentEdit { get; set; }
+
         // Hovering / dragging the auto-catch radius ring, or a horizontal rail end/hook, uses a horizontal-
         // resize cursor (col-resize); a vertical rail end/hook uses the vertical one.
-        private static readonly Cursor ResizeCursor = new(StandardCursorType.SizeWestEast);
-        private static readonly Cursor VResizeCursor = new(StandardCursorType.SizeNorthSouth);
+        // Cached, but created lazily rather than in the static constructor: eager creation would touch
+        // Avalonia's cursor factory at type load, which throws in the headless test host. Lazy .Value
+        // still allocates each cursor only once, so pointer-move hit-testing doesn't churn instances.
+        private static readonly Lazy<Cursor> LazyResizeCursor = new(() => new Cursor(StandardCursorType.SizeWestEast));
+        private static readonly Lazy<Cursor> LazyVResizeCursor = new(() => new Cursor(StandardCursorType.SizeNorthSouth));
+        private static Cursor ResizeCursor => LazyResizeCursor.Value;
+        private static Cursor VResizeCursor => LazyVResizeCursor.Value;
 
         private bool _dragging;
         private bool _resizingRadius;
@@ -232,14 +243,24 @@ namespace CtrDxEditor.Rendering
             base.OnPropertyChanged(change);
             if (change.Property == DocumentProperty)
             {
-                _pendingFit = true;
-                TryFit(); // fits immediately if already laid out (later loads); else waits for Bounds.
+                // Auto-fit only when the level's dimensions change (a fresh load, a new level, or a
+                // resolution change). An undo/redo restore swaps in a re-parsed same-sized document,
+                // and refitting it would throw away the user's current zoom and pan.
+                LevelDocument? oldDoc = change.GetOldValue<LevelDocument?>();
+                LevelDocument? newDoc = change.GetNewValue<LevelDocument?>();
+                if (newDoc is not null
+                    && (oldDoc is null || oldDoc.Width != newDoc.Width || oldDoc.Height != newDoc.Height))
+                {
+                    _pendingFit = true;
+                    TryFit(); // fits immediately if already laid out (later loads); else waits for Bounds.
+                }
+                UpdateScrollState();
             }
             else if (change.Property == BoundsProperty && _pendingFit)
             {
                 TryFit();
             }
-            else if (change.Property == BoundsProperty || change.Property == ViewProperty || change.Property == DocumentProperty)
+            else if (change.Property == BoundsProperty || change.Property == ViewProperty)
             {
                 UpdateScrollState();
             }
@@ -927,6 +948,7 @@ namespace CtrDxEditor.Rendering
             // (the ring can sit over other objects) but not over a middle-button pan.
             if (OnRadiusEdge(levelPt))
             {
+                BeginDocumentEdit?.Invoke();
                 _resizingRadius = true;
                 e.Pointer.Capture(this);
                 return;
@@ -940,10 +962,12 @@ namespace CtrDxEditor.Rendering
                 case GrabRail.Handle.ResizeStart:
                 case GrabRail.Handle.ResizeEnd:
                 case GrabRail.Handle.SlideHook:
+                    BeginDocumentEdit?.Invoke();
                     _railDrag = handle;
                     e.Pointer.Capture(this);
                     return;
                 case GrabRail.Handle.MoveBar:
+                    BeginDocumentEdit?.Invoke();
                     _dragOffset = levelPt - new Vec2(SelectedObject!.X, SelectedObject.Y);
                     _dragging = true;
                     e.Pointer.Capture(this);
@@ -977,6 +1001,7 @@ namespace CtrDxEditor.Rendering
                 if (li >= 0 && bounds[li].Contains(levelPt))
                 {
                     SelectedObject = locked;
+                    BeginDocumentEdit?.Invoke();
                     _dragOffset = levelPt - new Vec2(locked.X, locked.Y);
                     _dragging = true;
                     e.Pointer.Capture(this);
@@ -1000,6 +1025,7 @@ namespace CtrDxEditor.Rendering
 
             LevelObject obj = doc.Objects[hit];
             SelectedObject = obj;
+            BeginDocumentEdit?.Invoke();
             _dragOffset = levelPt - new Vec2(obj.X, obj.Y);
             _dragging = true;
             e.Pointer.Capture(this);
@@ -1057,13 +1083,39 @@ namespace CtrDxEditor.Rendering
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);
+            EndPointerGesture();
+            e.Pointer.Capture(null);
+        }
+
+        /// <inheritdoc />
+        protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+        {
+            base.OnPointerCaptureLost(e);
+            EndPointerGesture();
+        }
+
+        private void EndPointerGesture()
+        {
+            // Capture loss (including the release path's own Capture(null)) can fire with nothing in
+            // progress; skip the resets and completion callback unless a gesture is actually active.
+            bool gestureActive = _dragging || _panning || _resizingRadius
+                || _railDrag != GrabRail.Handle.None || _hookHovered;
+            if (!gestureActive)
+            {
+                return;
+            }
+
+            bool editedDocument = _dragging || _resizingRadius || _railDrag != GrabRail.Handle.None;
             _dragging = false;
             _panning = false;
             _resizingRadius = false;
             _railDrag = GrabRail.Handle.None;
+            if (editedDocument)
+            {
+                CompleteDocumentEdit?.Invoke();
+            }
             // Letting go ends the "grabbed" look; a fresh hover re-lights it if the cursor is on the hook.
             SetHookHovered(false);
-            e.Pointer.Capture(null);
         }
 
         /// <inheritdoc />
@@ -1141,11 +1193,11 @@ namespace CtrDxEditor.Rendering
         }
 
         /// <summary>Adds an object at the level's center (for single-click placement from the palette).</summary>
-        public void AddAtCenter(string element)
+        public bool AddAtCenter(string element)
         {
             if (Document is not { } doc)
             {
-                return;
+                return false;
             }
 
             LevelObject? placed = PlaceAt?.Invoke(element, doc.Width / 2, doc.Height / 2);
@@ -1154,10 +1206,11 @@ namespace CtrDxEditor.Rendering
                 SelectedObject = placed;
             }
             InvalidateVisual();
+            return placed is not null;
         }
 
         /// <summary>Drops an object at a screen-space point, snapping according to the current settings.</summary>
-        public void DropElement(string element, Point screenPoint)
+        public bool DropElement(string element, Point screenPoint)
         {
             Vec2 levelPt = View.ScreenToLevel(new Vec2(screenPoint.X, screenPoint.Y));
             (int gx, int gy) = Snap(levelPt);
@@ -1167,6 +1220,7 @@ namespace CtrDxEditor.Rendering
                 SelectedObject = placed;
             }
             InvalidateVisual();
+            return placed is not null;
         }
 
         private (int X, int Y) Snap(Vec2 levelPt)
