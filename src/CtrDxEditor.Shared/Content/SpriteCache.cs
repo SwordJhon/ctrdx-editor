@@ -39,6 +39,7 @@ namespace CtrDxEditor.Content
     {
         private const string XmasLightsJson = "images/christmas_lights.json";
         private const string XmasLightsImageBase = "images/christmas_lights";
+        private const int EarthArtQuad = 23;
 
         private readonly Dictionary<string, Bitmap> _bitmaps = [];
         private readonly Dictionary<string, Atlas> _atlases = [];
@@ -99,7 +100,7 @@ namespace CtrDxEditor.Content
         public SpriteLayerDraw? GetEarthArt()
         {
             Bitmap? bitmap = LoadBitmap("images/obj_star_idle" + imageExtension);
-            AtlasFrame? frame = LoadAtlas("images/obj_star_idle.json")?.Find("frame_0058.png");
+            AtlasFrame? frame = LoadAtlas("images/obj_star_idle.json")?.At(EarthArtQuad);
             return bitmap is null || frame is null ? null : new SpriteLayerDraw(bitmap, frame);
         }
 
@@ -347,8 +348,8 @@ namespace CtrDxEditor.Content
                 Atlas? atlas = isCandy ? candyAtlas : LoadAtlas(layer.AtlasJsonRelPath);
                 // The target's platform is whichever char_supports frame the active support selects.
                 AtlasFrame? frame = isTarget && omNomSupport > 0 && layer.AtlasJsonRelPath == SupportsAtlasJson
-                    ? atlas?.Find(OmNomSupports.FrameName(omNomSupport))
-                    : ResolveFrame(atlas, layer);
+                    ? atlas?.At(omNomSupport)
+                    : atlas?.At(layer.Quad);
                 if (bitmap is not null && frame is not null)
                 {
                     layers.Add(new SpriteLayerDraw(bitmap, frame));
@@ -359,7 +360,7 @@ namespace CtrDxEditor.Content
             foreach (SpriteLayer layer in v.RandomBackLayers)
             {
                 Bitmap? bitmap = LoadBitmap(layer.AtlasImageBasePath + imageExtension);
-                AtlasFrame? frame = ResolveFrame(LoadAtlas(layer.AtlasJsonRelPath), layer);
+                AtlasFrame? frame = LoadAtlas(layer.AtlasJsonRelPath)?.At(layer.Quad);
                 if (bitmap is not null && frame is not null)
                 {
                     variants.Add(new SpriteLayerDraw(bitmap, frame));
@@ -367,11 +368,6 @@ namespace CtrDxEditor.Content
             }
 
             return layers.Count == 0 ? null : new ObjectSprite(layers, v.Scale, variants);
-        }
-
-        private static AtlasFrame? ResolveFrame(Atlas? atlas, SpriteLayer layer)
-        {
-            return layer.Quad is int quad ? atlas?.At(quad) : atlas?.Find(layer.FrameName);
         }
 
         /// <summary>

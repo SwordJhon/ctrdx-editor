@@ -116,8 +116,8 @@ namespace CtrDxEditor.Tests
         public void GetSpriteResolvesCandyFramesByQuadIndexRegardlessOfName()
         {
             SpriteCache cache = new(new FakeStore());
-            // Deliberately unhelpful frame names ("z0".."z9") that match no descriptor FrameName; only
-            // their order matters. Candy = quads 0/1/2, candyL = quad 8, candyR = quad 9.
+            // Deliberately unhelpful frame names ("z0".."z9"); only their order matters.
+            // Candy = quads 0/1/2, candyL = quad 8, candyR = quad 9.
             SeedDefaultCandyAtlas(cache, [.. Enumerable.Range(0, 10).Select(i => Frame($"z{i}"))]);
 
             ObjectSprite candy = Assert.IsType<ObjectSprite>(cache.GetSprite("candy"));
@@ -128,6 +128,18 @@ namespace CtrDxEditor.Tests
 
             ObjectSprite candyR = Assert.IsType<ObjectSprite>(cache.GetSprite("candyR"));
             Assert.Equal(["z9"], candyR.Layers.Select(l => l.Frame.Filename));
+        }
+
+        /// <summary>The cosmic background earth decoration is game quad 23, not a filename lookup.</summary>
+        [Fact]
+        public void GetEarthArtResolvesObjStarIdleByQuadIndex()
+        {
+            SpriteCache cache = new(new FakeStore());
+            SeedEarthAtlas(cache);
+
+            SpriteLayerDraw art = Assert.IsType<SpriteLayerDraw>(cache.GetEarthArt());
+
+            Assert.Equal("quad-23-earth", art.Frame.Filename);
         }
 
         /// <summary>
@@ -150,6 +162,19 @@ namespace CtrDxEditor.Tests
             Assert.Equal("frame_0000.png", target.Layers[1].Frame.Filename);
         }
 
+        /// <summary>The target support selection is an atlas position, so frame names can vary.</summary>
+        [Fact]
+        public void GetSpriteResolvesTargetPlatformBySupportIndex()
+        {
+            SpriteCache cache = new(new FakeStore());
+            SeedTargetAtlasesWithUnhelpfulNames(cache);
+
+            ObjectSprite target = Assert.IsType<ObjectSprite>(cache.GetSprite("target", candySkin: 0, omNomSupport: 3));
+
+            Assert.Equal("support-quad-3", target.Layers[0].Frame.Filename);
+            Assert.Equal("om-nom-quad-0", target.Layers[1].Frame.Filename);
+        }
+
         private static void SeedTargetAtlases(SpriteCache cache)
         {
             Bitmap bitmap = (Bitmap)RuntimeHelpers.GetUninitializedObject(typeof(Bitmap));
@@ -165,6 +190,21 @@ namespace CtrDxEditor.Tests
             });
         }
 
+        private static void SeedTargetAtlasesWithUnhelpfulNames(SpriteCache cache)
+        {
+            Bitmap bitmap = (Bitmap)RuntimeHelpers.GetUninitializedObject(typeof(Bitmap));
+            SetPrivateField(cache, "_bitmaps", new Dictionary<string, Bitmap>
+            {
+                ["images/char_supports.png"] = bitmap,
+                ["images/char_animations.png"] = bitmap,
+            });
+            SetPrivateField(cache, "_atlases", new Dictionary<string, Atlas>
+            {
+                ["images/char_supports.json"] = new Atlas([.. Enumerable.Range(0, 17).Select(i => Frame($"support-quad-{i}"))]),
+                ["images/char_animations.json"] = new Atlas([Frame("om-nom-quad-0")]),
+            });
+        }
+
         private static void SeedDefaultCandyAtlas(SpriteCache cache, IReadOnlyList<AtlasFrame> frames)
         {
             Bitmap bitmap = (Bitmap)RuntimeHelpers.GetUninitializedObject(typeof(Bitmap));
@@ -175,6 +215,21 @@ namespace CtrDxEditor.Tests
             SetPrivateField(cache, "_atlases", new Dictionary<string, Atlas>
             {
                 [CandySkins.JsonPath(0)] = new Atlas(frames),
+            });
+        }
+
+        private static void SeedEarthAtlas(SpriteCache cache)
+        {
+            Bitmap bitmap = (Bitmap)RuntimeHelpers.GetUninitializedObject(typeof(Bitmap));
+            SetPrivateField(cache, "_bitmaps", new Dictionary<string, Bitmap>
+            {
+                ["images/obj_star_idle.png"] = bitmap,
+            });
+            SetPrivateField(cache, "_atlases", new Dictionary<string, Atlas>
+            {
+                ["images/obj_star_idle.json"] = new Atlas(
+                    [.. Enumerable.Range(0, 24).Select(i => Frame(i == 23 ? "quad-23-earth" : $"z{i}")),
+                     Frame("frame_0058.png")]),
             });
         }
 
