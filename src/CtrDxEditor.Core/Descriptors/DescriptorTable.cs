@@ -52,6 +52,10 @@ namespace CtrDxEditor.Core.Descriptors
                 new AttributeSpec("invisible", AttrType.Bool, "false"),
             ], MaxCount: int.MaxValue),
             new ObjectDescriptor("bubble", "Bubble", [], MaxCount: int.MaxValue),
+            new ObjectDescriptor("pump", "Pump",
+            [
+                new AttributeSpec("angle", AttrType.Number, "0"),
+            ], MaxCount: int.MaxValue),
             new ObjectDescriptor("gravitySwitch", "Gravity Switch", [], MaxCount: int.MaxValue),
             new ObjectDescriptor("lightBulb", "Light Bulb",
             [

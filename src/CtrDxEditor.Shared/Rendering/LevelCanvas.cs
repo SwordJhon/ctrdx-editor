@@ -195,6 +195,8 @@ namespace CtrDxEditor.Rendering
             };
 
         private bool _dragging;
+        // True while dragging the selected object's rotation dial.
+        private bool _rotating;
         private bool _resizingRadius;
         // Which movable-rail handle the current drag is manipulating (slide the hook or resize an end);
         // None when no rail drag is in progress. A MoveBar drag routes through _dragging instead.
@@ -202,6 +204,8 @@ namespace CtrDxEditor.Rendering
         // Whether the pointer is hovering the selected grab's hook, so it shows the highlight art even
         // before a drag begins (the game highlights the mover on interaction).
         private bool _hookHovered;
+        // True while the cursor hovers the selected object's rotation knob (lights it up).
+        private bool _dialKnobHovered;
         private Vec2 _dragOffset;
         private int _lastHitIndex = -1;
         private bool _panning;
@@ -459,6 +463,11 @@ namespace CtrDxEditor.Rendering
                 context.DrawRectangle(null, pen, new Rect(stl.X, stl.Y, sbr.X - stl.X, sbr.Y - stl.Y));
             }
 
+            if (selected is not null && RotationTable.For(selected.Type) is { } rotSpec)
+            {
+                RotationDialRenderer.Draw(context, v, selected, rotSpec, _rotating || _dialKnobHovered);
+            }
+
             // Translucent ghost of the object being dragged from the palette, at its snapped drop spot.
             if (_ghostActive && _ghostElement is { } ghostElement
                 && sprites.GetSprite(CanvasSpriteKey(ghostElement, doc.NightLevel), ActiveCandySkin, ActiveOmNomSupport) is { } ghostSprite)
@@ -698,6 +707,20 @@ namespace CtrDxEditor.Rendering
                 {
                     DrawSprite(ctx, v, star, obj.X, obj.Y);
                     DrawStarDuration(ctx, v, star, obj, timeout, starDurationText);
+                }
+                DrawOverlays(ctx, v, sprites, obj, obj.X, obj.Y);
+                return;
+            }
+
+            if (RotationTable.For(obj.Type) is { } rotSpec)
+            {
+                if (sprites.GetSprite(CanvasSpriteKey(obj.Type, nightLevel), candySkin, omNomSupport) is { } rotSprite)
+                {
+                    double deg = ObjectRotation.DisplayDegrees(obj, rotSpec);
+                    foreach (SpriteLayerDraw layer in rotSprite.Layers)
+                    {
+                        DrawLayer(ctx, v, layer, obj.X, obj.Y, rotSprite.Scale, deg);
+                    }
                 }
                 DrawOverlays(ctx, v, sprites, obj, obj.X, obj.Y);
                 return;
@@ -998,6 +1021,32 @@ namespace CtrDxEditor.Rendering
                 : GrabRail.Handle.None;
         }
 
+        // What part of the selected rotatable object's dial a level point is over, or None. The geometry
+        // lives in ObjectRotation; here we supply the object's spec and the screen-derived tolerances
+        // (converted to level units by the current zoom), matching the rail/radius handles.
+        private ObjectRotation.Handle HitRotationDial(Vec2 levelPt)
+        {
+            if (SelectedObject is not { } obj || View.Zoom <= 0 || RotationTable.For(obj.Type) is not { } spec)
+            {
+                return ObjectRotation.Handle.None;
+            }
+            Vec2 c = new(obj.X, obj.Y);
+            double radius = RotationDialRenderer.RadiusPx / View.Zoom;
+            return ObjectRotation.HitTest(
+                c, ObjectRotation.StoredAngle(obj, spec), spec, radius, levelPt,
+                ringTolerance: RotationDialRenderer.RingTolerancePx / View.Zoom,
+                knobTolerance: RotationDialRenderer.KnobTolerancePx / View.Zoom);
+        }
+
+        // Writes the object's new angle from a dial drag: free (whole degrees) unless Alt is held, which
+        // snaps to the spec's step (15°).
+        private static void ApplyRotation(LevelObject obj, RotationSpec spec, Vec2 levelPt, KeyModifiers mods)
+        {
+            bool snap = mods.HasFlag(KeyModifiers.Alt);
+            double angle = ObjectRotation.AngleFromPoint(new Vec2(obj.X, obj.Y), levelPt, spec, snap);
+            obj.SetAttr(spec.AttributeName, ObjectRotation.Format(angle));
+        }
+
         // Applies the active rail drag to the grab: sliding moves the hook (object x/y) and its offset
         // together so the rail stays put; resizing an end rewrites moveLength (and moveOffset for the near
         // end). All constrained by GrabRail so the hook never leaves the rail.
@@ -1058,6 +1107,15 @@ namespace CtrDxEditor.Rendering
             if (_hookHovered != hovered)
             {
                 _hookHovered = hovered;
+                InvalidateVisual();
+            }
+        }
+
+        private void SetDialKnobHovered(bool hovered)
+        {
+            if (_dialKnobHovered != hovered)
+            {
+                _dialKnobHovered = hovered;
                 InvalidateVisual();
             }
         }
@@ -1145,6 +1203,20 @@ namespace CtrDxEditor.Rendering
                     break;
             }
 
+            // Grabbing the selected object's rotation dial (knob or ring) rotates it; takes priority over
+            // object hit-testing so the dial wins over anything beneath it.
+            if (HitRotationDial(levelPt) != ObjectRotation.Handle.None
+                && SelectedObject is { } rotObj && RotationTable.For(rotObj.Type) is { } rotSpec)
+            {
+                BeginDocumentEdit?.Invoke();
+                _rotating = true;
+                ApplyRotation(rotObj, rotSpec, levelPt, e.KeyModifiers);
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                e.Pointer.Capture(this);
+                return;
+            }
+
             List<LevelBounds> bounds = BuildHitBounds(doc);
 
             // Double-click toggles the lock. ClickCount keeps climbing (3, 4, ...) while clicking in the
@@ -1223,6 +1295,14 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
+            if (_rotating && SelectedObject is { } rotObj && RotationTable.For(rotObj.Type) is { } rotSpec)
+            {
+                ApplyRotation(rotObj, rotSpec, levelPt, e.KeyModifiers);
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                return;
+            }
+
             if (_panning)
             {
                 ScrollBy(_panLast.X - p.X, _panLast.Y - p.Y);
@@ -1236,7 +1316,10 @@ namespace CtrDxEditor.Rendering
                 // light up the hook when it's hovered.
                 GrabRail.Handle handle = HitRail(levelPt);
                 SetHookHovered(handle == GrabRail.Handle.SlideHook);
-                Cursor = OnRadiusEdge(levelPt) ? ResizeCursor : CursorForHandle(handle);
+                ObjectRotation.Handle dial = HitRotationDial(levelPt);
+                SetDialKnobHovered(dial == ObjectRotation.Handle.Knob);
+                Cursor = dial != ObjectRotation.Handle.None ? new Cursor(StandardCursorType.Hand)
+                    : OnRadiusEdge(levelPt) ? ResizeCursor : CursorForHandle(handle);
                 return;
             }
 
@@ -1267,17 +1350,19 @@ namespace CtrDxEditor.Rendering
             // Capture loss (including the release path's own Capture(null)) can fire with nothing in
             // progress; skip the resets and completion callback unless a gesture is actually active.
             bool gestureActive = _dragging || _panning || _resizingRadius
-                || _railDrag != GrabRail.Handle.None || _hookHovered;
+                || _railDrag != GrabRail.Handle.None || _rotating || _hookHovered;
             if (!gestureActive)
             {
                 return;
             }
 
-            bool editedDocument = _dragging || _resizingRadius || _railDrag != GrabRail.Handle.None;
+            bool editedDocument = _dragging || _resizingRadius
+                || _railDrag != GrabRail.Handle.None || _rotating;
             _dragging = false;
             _panning = false;
             _resizingRadius = false;
             _railDrag = GrabRail.Handle.None;
+            _rotating = false;
             if (editedDocument)
             {
                 CompleteDocumentEdit?.Invoke();
@@ -1291,6 +1376,7 @@ namespace CtrDxEditor.Rendering
         {
             base.OnPointerExited(e);
             SetHookHovered(false); // don't leave the hook lit when the cursor leaves the canvas
+            SetDialKnobHovered(false); // nor the rotation knob
         }
 
         /// <inheritdoc />
