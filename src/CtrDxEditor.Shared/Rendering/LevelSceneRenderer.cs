@@ -541,7 +541,69 @@ namespace CtrDxEditor.Rendering
             }
             Vec2 tl = v.LevelToScreen(new Vec2(b.X, b.Y));
             Vec2 br = v.LevelToScreen(new Vec2(b.X + b.W, b.Y + b.H));
-            ctx.DrawRectangle(null, pen, new Rect(tl.X, tl.Y, br.X - tl.X, br.Y - tl.Y));
+            Rect box = new(tl.X, tl.Y, br.X - tl.X, br.Y - tl.Y);
+
+            // A rotatable object's box turns with its sprite about the same anchor (see DrawLayer). The view
+            // transform is translation + uniform scale, so rotating the projected box about the projected
+            // anchor equals rotating it in level space. Square boxes only diverge visibly off the axes.
+            if (RotationTable.For(obj.Type) is { } rotSpec && ObjectRotation.DisplayDegrees(obj, rotSpec) is var deg && deg != 0)
+            {
+                Vec2 center = v.LevelToScreen(new Vec2(obj.X, obj.Y));
+                Matrix m = Matrix.CreateTranslation(-center.X, -center.Y)
+                    * Matrix.CreateRotation(deg * Math.PI / 180.0)
+                    * Matrix.CreateTranslation(center.X, center.Y);
+                using (ctx.PushTransform(m))
+                {
+                    ctx.DrawRectangle(null, pen, box);
+                }
+                return;
+            }
+            ctx.DrawRectangle(null, pen, box);
+        }
+
+        /// <summary>
+        /// Draws an abstract force-field arrow: a shaft from <paramref name="centerLevel"/> along
+        /// <paramref name="directionRadians"/> for <paramref name="lengthLevel"/> level units, capped with a
+        /// V arrowhead. Object-agnostic on purpose so any directional emitter — the pump now, steam later —
+        /// reuses it by passing its own push direction. The direction is a plain screen angle: the view
+        /// transform is translation + uniform scale (no rotation/flip), so a level-space direction is the
+        /// same on screen.
+        /// </summary>
+        /// <param name="ctx">Destination drawing context.</param>
+        /// <param name="v">View transform mapping level coordinates to screen coordinates.</param>
+        /// <param name="centerLevel">Arrow tail (the emitter center) in level units.</param>
+        /// <param name="directionRadians">Push direction, clockwise-positive in the shared Y-down space.</param>
+        /// <param name="lengthLevel">Shaft length in level units.</param>
+        /// <param name="pen">Pen for the shaft and head.</param>
+        public static void DrawForceArrow(
+            DrawingContext ctx,
+            ViewTransform v,
+            Vec2 centerLevel,
+            double directionRadians,
+            double lengthLevel,
+            Pen pen)
+        {
+            Vec2 tipLevel = new(
+                centerLevel.X + (Math.Cos(directionRadians) * lengthLevel),
+                centerLevel.Y + (Math.Sin(directionRadians) * lengthLevel));
+            Vec2 tail = v.LevelToScreen(centerLevel);
+            Vec2 tip = v.LevelToScreen(tipLevel);
+            ctx.DrawLine(pen, new Point(tail.X, tail.Y), new Point(tip.X, tip.Y));
+
+            // V arrowhead swept back from the tip, sized to the on-screen shaft so it tracks zoom.
+            double shaft = GrabRadius.Distance(tail, tip);
+            if (shaft <= 0)
+            {
+                return;
+            }
+            double screenDir = Math.Atan2(tip.Y - tail.Y, tip.X - tail.X);
+            double head = Math.Min(shaft, 10.0);
+            double spread = Math.PI / 6;
+            foreach (double barb in new[] { screenDir + Math.PI - spread, screenDir + Math.PI + spread })
+            {
+                ctx.DrawLine(pen, new Point(tip.X, tip.Y),
+                    new Point(tip.X + (Math.Cos(barb) * head), tip.Y + (Math.Sin(barb) * head)));
+            }
         }
     }
 }
