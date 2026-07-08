@@ -215,8 +215,13 @@ namespace CtrDxEditor.ViewModels
                 bool enabled = Document is not null && LockedObject is null && !Cardinality.IsAtCapacity(d, objs);
                 Palette.Add(new PaletteItemViewModel(
                     d.ElementName, Localizer.ObjectName(d.ElementName), enabled,
-                    Sprites.GetThumbnail(d.ElementName, ActiveCandySkin, ActiveOmNomSupport)));
+                    Sprites.GetThumbnail(PaletteSpriteKey(d.ElementName), ActiveCandySkin, ActiveOmNomSupport)));
             }
+        }
+
+        private static string PaletteSpriteKey(string element)
+        {
+            return element;
         }
 
         // Candy type follows twoParts. When no document is
@@ -369,6 +374,12 @@ namespace CtrDxEditor.ViewModels
 
             Fields.Add(new AttributeFieldViewModel(value, "x", AttrType.Whole, null, Changed, Changing));
             Fields.Add(new AttributeFieldViewModel(value, "y", AttrType.Whole, null, Changed, Changing));
+
+            if (value.Type == "star")
+            {
+                StarFieldBuilder.Build(Fields, value, Changed, Changing, () => PopulateFields(value));
+                return;
+            }
 
             if (value.Type == "grab" && Document is not null)
             {
