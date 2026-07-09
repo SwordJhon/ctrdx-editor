@@ -120,6 +120,7 @@ namespace CtrDxEditor.Rendering
         /// <param name="omNomSupport">Active Om Nom support index.</param>
         /// <param name="nightLevel">Whether night sprite variants apply.</param>
         /// <param name="starDurationText">Brush for the timed-star duration label.</param>
+        /// <param name="animationPreviewSeconds">Elapsed live-preview seconds, or null for authored static rendering.</param>
         public static void DrawObject(
             DrawingContext ctx,
             ViewTransform v,
@@ -128,20 +129,25 @@ namespace CtrDxEditor.Rendering
             int candySkin,
             int omNomSupport,
             bool nightLevel,
-            IBrush starDurationText)
+            IBrush starDurationText,
+            double? animationPreviewSeconds = null)
         {
+            Vec2 previewPosition = PreviewPosition(obj, animationPreviewSeconds);
+            double x = previewPosition.X;
+            double y = previewPosition.Y;
+            double? spinRotation = SpinPreviewRotation(obj, animationPreviewSeconds);
             if (obj.Type == "star" && StarTimeout(obj) is double timeout && timeout > 0)
             {
                 if (sprites.GetSprite("star_timed") is { } timed)
                 {
-                    DrawSprite(ctx, v, timed, obj.X, obj.Y);
+                    DrawSprite(ctx, v, timed, x, y, spinRotation);
                 }
                 if (sprites.GetSprite(CanvasSpriteKey("star", nightLevel), candySkin, omNomSupport) is { } star)
                 {
-                    DrawSprite(ctx, v, star, obj.X, obj.Y);
-                    DrawStarDuration(ctx, v, star, obj, timeout, starDurationText);
+                    DrawSprite(ctx, v, star, x, y, spinRotation);
+                    DrawStarDuration(ctx, v, star, x, y, timeout, starDurationText);
                 }
-                DrawOverlays(ctx, v, sprites, obj, obj.X, obj.Y);
+                DrawOverlays(ctx, v, sprites, obj, x, y);
                 return;
             }
 
@@ -150,13 +156,13 @@ namespace CtrDxEditor.Rendering
                 string rotKey = SpikeObject.IsSpike(obj.Type) ? SpikeObject.SpriteKey(obj) : obj.Type;
                 if (sprites.GetSprite(CanvasSpriteKey(rotKey, nightLevel), candySkin, omNomSupport) is { } rotSprite)
                 {
-                    double deg = ObjectRotation.DisplayDegrees(obj, rotSpec);
+                    double deg = ObjectRotation.DisplayDegrees(obj, rotSpec) + (spinRotation ?? 0.0);
                     foreach (SpriteLayerDraw layer in rotSprite.Layers)
                     {
-                        DrawLayer(ctx, v, layer, obj.X, obj.Y, rotSprite.Scale, deg);
+                        DrawLayer(ctx, v, layer, x, y, rotSprite.Scale, deg);
                     }
                 }
-                DrawOverlays(ctx, v, sprites, obj, obj.X, obj.Y);
+                DrawOverlays(ctx, v, sprites, obj, x, y);
                 return;
             }
 
@@ -166,11 +172,29 @@ namespace CtrDxEditor.Rendering
             {
                 if (sprite.Variants.Count > 0)
                 {
-                    DrawLayer(ctx, v, sprite.Variants[SpriteVariantPicker.Pick(obj.Element, sprite.Variants.Count)], obj.X, obj.Y, sprite.Scale);
+                    DrawLayer(ctx, v, sprite.Variants[SpriteVariantPicker.Pick(obj.Element, sprite.Variants.Count)], x, y, sprite.Scale, spinRotation);
                 }
-                DrawSprite(ctx, v, sprite, obj.X, obj.Y);
+                DrawSprite(ctx, v, sprite, x, y, spinRotation);
             }
-            DrawOverlays(ctx, v, sprites, obj, obj.X, obj.Y);
+            DrawOverlays(ctx, v, sprites, obj, x, y);
+        }
+
+        private static Vec2 PreviewPosition(LevelObject obj, double? animationPreviewSeconds)
+        {
+            return animationPreviewSeconds is double seconds
+                ? ObjectSpin.PreviewPosition(obj, seconds)
+                : new Vec2(obj.X, obj.Y);
+        }
+
+        private static double? SpinPreviewRotation(LevelObject obj, double? spinPreviewSeconds)
+        {
+            if (spinPreviewSeconds is not double seconds || !SpinTable.IsSpinnable(obj.Type) || !ObjectSpin.IsRotatingInPlace(obj))
+            {
+                return null;
+            }
+
+            double degrees = ObjectSpin.PreviewDegrees(obj, seconds);
+            return degrees == 0 ? null : degrees;
         }
 
         /// <summary>Reads a star's <c>timeout</c> attribute in seconds.</summary>
@@ -224,6 +248,24 @@ namespace CtrDxEditor.Rendering
         /// <returns>Four screen-space corners ordered clockwise from top-left.</returns>
         public static Point[] SelectionOutlinePoints(ViewTransform v, LevelObject obj, LevelBounds bounds)
         {
+            return SelectionOutlinePointsWithPreview(v, obj, bounds, previewRotationDegrees: 0.0);
+        }
+
+        /// <summary>Screen-space selection outline corners with optional live-preview spin added.</summary>
+        /// <param name="v">View transform mapping level coordinates to screen coordinates.</param>
+        /// <param name="obj">The selected object.</param>
+        /// <param name="bounds">The unrotated level-space selection bounds.</param>
+        /// <param name="previewRotationDegrees">Live-preview spin degrees to add to the authored rotation.</param>
+        /// <param name="animationPreviewSeconds">Elapsed live-preview seconds used to translate orbiting objects.</param>
+        /// <returns>Four screen-space corners ordered clockwise from top-left.</returns>
+        public static Point[] SelectionOutlinePointsWithPreview(
+            ViewTransform v,
+            LevelObject obj,
+            LevelBounds bounds,
+            double previewRotationDegrees,
+            double? animationPreviewSeconds = null)
+        {
+            bounds = PreviewSelectionBounds(obj, bounds, animationPreviewSeconds);
             Point[] points =
             [
                 ScreenPoint(v, bounds.X, bounds.Y),
@@ -232,18 +274,15 @@ namespace CtrDxEditor.Rendering
                 ScreenPoint(v, bounds.X, bounds.Y + bounds.H),
             ];
 
-            if (RotationTable.For(obj.Type) is not { } rotSpec)
-            {
-                return points;
-            }
-
-            double degrees = ObjectRotation.DisplayDegrees(obj, rotSpec);
+            double degrees = previewRotationDegrees
+                + (RotationTable.For(obj.Type) is { } rotSpec ? ObjectRotation.DisplayDegrees(obj, rotSpec) : 0.0);
             if (degrees == 0)
             {
                 return points;
             }
 
-            Point center = ScreenPoint(v, obj.X, obj.Y);
+            Vec2 previewPosition = PreviewPosition(obj, animationPreviewSeconds);
+            Point center = ScreenPoint(v, previewPosition.X, previewPosition.Y);
             double radians = degrees * Math.PI / 180.0;
             double sin = Math.Sin(radians);
             double cos = Math.Cos(radians);
@@ -259,6 +298,16 @@ namespace CtrDxEditor.Rendering
             return points;
         }
 
+        private static LevelBounds PreviewSelectionBounds(LevelObject obj, LevelBounds bounds, double? animationPreviewSeconds)
+        {
+            Vec2 position = PreviewPosition(obj, animationPreviewSeconds);
+            double dx = position.X - obj.X;
+            double dy = position.Y - obj.Y;
+            return dx == 0.0 && dy == 0.0
+                ? bounds
+                : new LevelBounds(bounds.X + dx, bounds.Y + dy, bounds.W, bounds.H);
+        }
+
         private static Point ScreenPoint(ViewTransform v, double x, double y)
         {
             Vec2 point = v.LevelToScreen(new Vec2(x, y));
@@ -269,21 +318,23 @@ namespace CtrDxEditor.Rendering
         /// <param name="ctx">Destination drawing context.</param>
         /// <param name="v">View transform mapping level coordinates to screen coordinates.</param>
         /// <param name="star">The star sprite, used to find its visible top edge.</param>
-        /// <param name="obj">The star object.</param>
+        /// <param name="x">Star anchor X in level units.</param>
+        /// <param name="y">Star anchor Y in level units.</param>
         /// <param name="timeout">The star's timeout in seconds.</param>
         /// <param name="foreground">Brush for the label text.</param>
         private static void DrawStarDuration(
             DrawingContext ctx,
             ViewTransform v,
             ObjectSprite star,
-            LevelObject obj,
+            double x,
+            double y,
             double timeout,
             IBrush foreground)
         {
             FormattedText formatted = CreateStarDurationText(FormatStarDuration(timeout), v.Zoom, foreground);
 
-            double top = StarTop(star, obj);
-            Vec2 anchor = v.LevelToScreen(new Vec2(obj.X, top));
+            double top = StarTop(star, x, y);
+            Vec2 anchor = v.LevelToScreen(new Vec2(x, top));
             Point origin = ComputeStarDurationOrigin(
                 new Point(anchor.X, anchor.Y),
                 new Size(formatted.Width, formatted.Height),
@@ -327,17 +378,18 @@ namespace CtrDxEditor.Rendering
 
         /// <summary>Finds the visible top edge of a star's art in level units.</summary>
         /// <param name="star">The star sprite.</param>
-        /// <param name="obj">The star object providing the anchor position.</param>
+        /// <param name="x">Star anchor X in level units.</param>
+        /// <param name="y">Star anchor Y in level units.</param>
         /// <returns>The topmost drawn Y, or the object's Y when the sprite has no layers.</returns>
-        private static double StarTop(ObjectSprite star, LevelObject obj)
+        private static double StarTop(ObjectSprite star, double x, double y)
         {
             double top = double.MaxValue;
             foreach (SpriteLayerDraw layer in star.Layers)
             {
-                LevelBounds bounds = SpritePlacement.Compute(layer.Frame, obj.X, obj.Y, star.Scale).Dest;
+                LevelBounds bounds = SpritePlacement.Compute(layer.Frame, x, y, star.Scale).Dest;
                 top = Math.Min(top, bounds.Y);
             }
-            return top == double.MaxValue ? obj.Y : top;
+            return top == double.MaxValue ? y : top;
         }
 
         /// <summary>
@@ -526,11 +578,12 @@ namespace CtrDxEditor.Rendering
         /// <param name="sprite">The sprite to draw.</param>
         /// <param name="x">Anchor X in level units.</param>
         /// <param name="y">Anchor Y in level units.</param>
-        public static void DrawSprite(DrawingContext ctx, ViewTransform v, ObjectSprite sprite, double x, double y)
+        /// <param name="rotationDegrees">Rotation about the anchor in degrees, or null for no rotation.</param>
+        public static void DrawSprite(DrawingContext ctx, ViewTransform v, ObjectSprite sprite, double x, double y, double? rotationDegrees = null)
         {
             foreach (SpriteLayerDraw layer in sprite.Layers)
             {
-                DrawLayer(ctx, v, layer, x, y, sprite.Scale);
+                DrawLayer(ctx, v, layer, x, y, sprite.Scale, rotationDegrees);
             }
         }
 
@@ -603,15 +656,19 @@ namespace CtrDxEditor.Rendering
         /// <param name="scale">Sprite scale factor, used to size the hitbox.</param>
         /// <param name="model">Which device hitbox model (desktop or phone) to compute.</param>
         /// <param name="pen">Pen for the hitbox outline.</param>
+        /// <param name="previewRotationDegrees">Live-preview spin degrees to add to the authored rotation.</param>
+        /// <param name="animationPreviewSeconds">Elapsed live-preview seconds used to translate orbiting objects.</param>
         public static void DrawHitbox(
             DrawingContext ctx,
             ViewTransform v,
             LevelObject obj,
             double scale,
             HitboxModel model,
-            Pen pen)
+            Pen pen,
+            double previewRotationDegrees = 0.0,
+            double? animationPreviewSeconds = null)
         {
-            if (HitboxTable.Compute(obj, scale, model) is not { } b)
+            if (PreviewHitboxBounds(obj, scale, model, animationPreviewSeconds) is not { } b)
             {
                 return;
             }
@@ -622,9 +679,12 @@ namespace CtrDxEditor.Rendering
             // A rotatable object's box turns with its sprite about the same anchor (see DrawLayer). The view
             // transform is translation + uniform scale, so rotating the projected box about the projected
             // anchor equals rotating it in level space. Square boxes only diverge visibly off the axes.
-            if (RotationTable.For(obj.Type) is { } rotSpec && ObjectRotation.DisplayDegrees(obj, rotSpec) is var deg && deg != 0)
+            double deg = previewRotationDegrees
+                + (RotationTable.For(obj.Type) is { } rotSpec ? ObjectRotation.DisplayDegrees(obj, rotSpec) : 0.0);
+            if (deg != 0)
             {
-                Vec2 center = v.LevelToScreen(new Vec2(obj.X, obj.Y));
+                Vec2 previewPosition = PreviewPosition(obj, animationPreviewSeconds);
+                Vec2 center = v.LevelToScreen(previewPosition);
                 Matrix m = Matrix.CreateTranslation(-center.X, -center.Y)
                     * Matrix.CreateRotation(deg * Math.PI / 180.0)
                     * Matrix.CreateTranslation(center.X, center.Y);
@@ -635,6 +695,110 @@ namespace CtrDxEditor.Rendering
                 return;
             }
             ctx.DrawRectangle(null, pen, box);
+        }
+
+        /// <summary>Computes hitbox bounds translated to the live orbit-preview position.</summary>
+        public static LevelBounds? PreviewHitboxBounds(
+            LevelObject obj,
+            double scale,
+            HitboxModel model,
+            double? animationPreviewSeconds)
+        {
+            if (HitboxTable.Compute(obj, scale, model) is not { } bounds)
+            {
+                return null;
+            }
+
+            Vec2 position = PreviewPosition(obj, animationPreviewSeconds);
+            double dx = position.X - obj.X;
+            double dy = position.Y - obj.Y;
+            return dx == 0.0 && dy == 0.0
+                ? bounds
+                : new LevelBounds(bounds.X + dx, bounds.Y + dy, bounds.W, bounds.H);
+        }
+
+        /// <summary>Draws the circular path used by active <c>RC</c>/<c>RW</c> orbit movement.</summary>
+        public static void DrawOrbitPath(DrawingContext ctx, ViewTransform v, LevelObject obj, Pen pathPen, Pen arrowPen)
+        {
+            Point[] points = ComputeOrbitPathPoints(v, obj);
+            if (points.Length < 2)
+            {
+                return;
+            }
+
+            for (int i = 0; i < points.Length; i++)
+            {
+                ctx.DrawLine(pathPen, points[i], points[(i + 1) % points.Length]);
+            }
+
+            Point[] arrow = ComputeOrbitArrowPoints(v, obj);
+            if (arrow.Length == 4)
+            {
+                ctx.DrawLine(arrowPen, arrow[0], arrow[1]);
+                ctx.DrawLine(arrowPen, arrow[1], arrow[2]);
+                ctx.DrawLine(arrowPen, arrow[1], arrow[3]);
+            }
+        }
+
+        /// <summary>Computes screen-space points for the circular orbit path centered on authored object coordinates.</summary>
+        public static Point[] ComputeOrbitPathPoints(ViewTransform v, LevelObject obj)
+        {
+            if (!ObjectSpin.IsOrbital(obj))
+            {
+                return [];
+            }
+
+            int radius = ObjectSpin.OrbitRadius(obj);
+            int segments = Math.Max(24, radius);
+            Point[] points = new Point[segments];
+            Vec2 center = new(obj.X, obj.Y);
+            for (int i = 0; i < points.Length; i++)
+            {
+                double angle = Math.Tau * i / points.Length;
+                Vec2 level = new(
+                    center.X + (Math.Cos(angle) * radius),
+                    center.Y + (Math.Sin(angle) * radius));
+                Vec2 screen = v.LevelToScreen(level);
+                points[i] = new Point(screen.X, screen.Y);
+            }
+
+            return points;
+        }
+
+        /// <summary>Computes a small screen-space tangent arrow for the RC/RW orbit path direction.</summary>
+        public static Point[] ComputeOrbitArrowPoints(ViewTransform v, LevelObject obj)
+        {
+            if (!ObjectSpin.IsOrbital(obj))
+            {
+                return [];
+            }
+
+            int radius = ObjectSpin.OrbitRadius(obj);
+            if (radius <= 0)
+            {
+                return [];
+            }
+
+            Vec2 center = v.LevelToScreen(new Vec2(obj.X, obj.Y));
+            double radiusScreen = radius * v.Zoom;
+            double arrowLength = Math.Min(Math.Max(radiusScreen * 0.35, 8.0), 18.0);
+            double direction = ObjectSpin.OrbitClockwise(obj) ? 0.0 : Math.PI;
+            Point tail = new(
+                center.X + (Math.Cos(-Math.PI / 2.0) * radiusScreen),
+                center.Y + (Math.Sin(-Math.PI / 2.0) * radiusScreen));
+            Point tip = new(
+                tail.X + (Math.Cos(direction) * arrowLength),
+                tail.Y + (Math.Sin(direction) * arrowLength));
+            double barbLength = Math.Min(arrowLength * 0.6, 8.0);
+            double spread = Math.PI / 6.0;
+            Point barb1 = new(
+                tip.X + (Math.Cos(direction + Math.PI - spread) * barbLength),
+                tip.Y + (Math.Sin(direction + Math.PI - spread) * barbLength));
+            Point barb2 = new(
+                tip.X + (Math.Cos(direction + Math.PI + spread) * barbLength),
+                tip.Y + (Math.Sin(direction + Math.PI + spread) * barbLength));
+
+            return [tail, tip, barb1, barb2];
         }
 
         /// <summary>
@@ -680,6 +844,67 @@ namespace CtrDxEditor.Rendering
                 ctx.DrawLine(pen, new Point(tip.X, tip.Y),
                     new Point(tip.X + (Math.Cos(barb) * head), tip.Y + (Math.Sin(barb) * head)));
             }
+        }
+
+        /// <summary>Draws a curved arrow around an object with active rotateSpeed-backed spin.</summary>
+        /// <param name="ctx">Destination drawing context.</param>
+        /// <param name="v">View transform mapping level coordinates to screen coordinates.</param>
+        /// <param name="obj">Object that may carry <c>rotateSpeed</c>.</param>
+        /// <param name="pen">Pen used for the arc and arrowhead.</param>
+        public static void DrawSpinArrow(DrawingContext ctx, ViewTransform v, LevelObject obj, Pen pen)
+        {
+            if (!SpinTable.IsSpinnable(obj.Type) || !ObjectSpin.IsSpinning(obj))
+            {
+                return;
+            }
+
+            Point[] points = ComputeSpinArrowPoints(v, obj, radiusScreen: 18.0);
+            for (int i = 1; i < points.Length - 2; i++)
+            {
+                ctx.DrawLine(pen, points[i - 1], points[i]);
+            }
+
+            Point tip = points[^3];
+            ctx.DrawLine(pen, tip, points[^2]);
+            ctx.DrawLine(pen, tip, points[^1]);
+        }
+
+        /// <summary>Computes screen-space points for the spin arrow arc plus the two arrowhead barbs.</summary>
+        /// <param name="v">View transform mapping level coordinates to screen coordinates.</param>
+        /// <param name="obj">Object with a non-zero <c>rotateSpeed</c>.</param>
+        /// <param name="radiusScreen">Arrow radius in screen pixels.</param>
+        /// <returns>Arc points followed by the two arrowhead barb endpoints.</returns>
+        public static Point[] ComputeSpinArrowPoints(ViewTransform v, LevelObject obj, double radiusScreen)
+        {
+            Vec2 centerLevel = new(obj.X, obj.Y);
+            Vec2 screen = v.LevelToScreen(centerLevel);
+            Point center = new(screen.X, screen.Y);
+            bool clockwise = ObjectSpin.SpinClockwise(obj);
+            const int arcSegments = 18;
+            double start = -Math.PI * 0.75;
+            double sweep = Math.PI * 1.5 * (clockwise ? 1 : -1);
+            Point[] points = new Point[arcSegments + 3];
+            for (int i = 0; i <= arcSegments; i++)
+            {
+                double t = i / (double)arcSegments;
+                double angle = start + (sweep * t);
+                points[i] = new Point(
+                    center.X + (Math.Cos(angle) * radiusScreen),
+                    center.Y + (Math.Sin(angle) * radiusScreen));
+            }
+
+            Point prev = points[arcSegments - 1];
+            Point tip = points[arcSegments];
+            double direction = Math.Atan2(tip.Y - prev.Y, tip.X - prev.X);
+            double head = Math.Min(radiusScreen * 0.45, 9.0);
+            double spread = Math.PI / 6;
+            points[^2] = new Point(
+                tip.X + (Math.Cos(direction + Math.PI - spread) * head),
+                tip.Y + (Math.Sin(direction + Math.PI - spread) * head));
+            points[^1] = new Point(
+                tip.X + (Math.Cos(direction + Math.PI + spread) * head),
+                tip.Y + (Math.Sin(direction + Math.PI + spread) * head));
+            return points;
         }
     }
 }

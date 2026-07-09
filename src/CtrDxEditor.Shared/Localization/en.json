@@ -19,10 +19,13 @@
     "Menu.View.ZoomIn": "Zoom _In",
     "Menu.View.ZoomOut": "Zoom _Out",
     "Menu.View.ZoomFit": "Zoom to _Fit",
+    "Menu.View.PlayAnimations": "Play animations",
+    "Menu.View.StopAnimations": "Stop animations",
     "Menu.View.SnapToGrid": "Snap to grid",
     "Menu.View.ShowHitboxes": "Show hitboxes",
     "Menu.View.ShowMobileHitboxes": "Show mobile hitboxes",
     "Menu.View.ShowForceFields": "Show force fields",
+    "Menu.View.ShowMovementPaths": "Show movement paths",
 
     "Panel.Objects": "Objects",
     "Panel.Properties": "Properties",
@@ -122,6 +125,9 @@
     "Dialog.Close.Body": "Close the current level?",
     "Dialog.Close.Proceed": "Close level",
 
+    "Tooltip.ObjectLock": "Lock or unlock this object\nYou can also double click this object on the level canvas to lock/unlock it",
+    "Tooltip.ObjectAnimationPreview": "Play or stop this object's animation",
+
     "Object.target": "Om Nom",
     "Object.candy": "Candy",
     "Object.candyL": "Candy (Left)",
@@ -162,5 +168,12 @@
     "Attr.angle": "Angle",
     "Attr.size": "Size",
     "Attr.toggled": "Toggled",
-    "Attr.toggleGroup": "Group"
+    "Attr.toggleGroup": "Group",
+    "Attr.spin": "Spin object",
+    "Attr.spinSpeed": "Spin speed",
+    "Attr.spinClockwise": "Spin clockwise",
+    "Attr.spinOrbital": "Orbit object",
+    "Attr.orbitRadius": "Orbit radius",
+    "Attr.orbitSpeed": "Orbit speed",
+    "Attr.orbitClockwise": "Orbit clockwise"
 }

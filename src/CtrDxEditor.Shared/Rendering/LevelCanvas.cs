@@ -9,6 +9,7 @@ using CtrDxEditor.Content;
 using CtrDxEditor.Core.Document;
 using CtrDxEditor.Core.Editing;
 using CtrDxEditor.Core.Geometry;
+using CtrDxEditor.ViewModels;
 
 namespace CtrDxEditor.Rendering
 {
@@ -53,6 +54,10 @@ namespace CtrDxEditor.Rendering
         public static readonly StyledProperty<bool> ShowForceFieldsProperty =
             AvaloniaProperty.Register<LevelCanvas, bool>(nameof(ShowForceFields), defaultValue: true);
 
+        /// <summary>Avalonia property backing <see cref="ShowMovementPaths"/>.</summary>
+        public static readonly StyledProperty<bool> ShowMovementPathsProperty =
+            AvaloniaProperty.Register<LevelCanvas, bool>(nameof(ShowMovementPaths), defaultValue: true);
+
         /// <summary>Editor-decoration rope skin index applied to every rope (0 = default brown).</summary>
         public static readonly StyledProperty<int> ActiveRopeSkinProperty =
             AvaloniaProperty.Register<LevelCanvas, int>(nameof(ActiveRopeSkin));
@@ -68,6 +73,18 @@ namespace CtrDxEditor.Rendering
         /// <summary>Editor-decoration Om Nom sitting platform index applied to the target (0 = default).</summary>
         public static readonly StyledProperty<int> ActiveOmNomSupportProperty =
             AvaloniaProperty.Register<LevelCanvas, int>(nameof(ActiveOmNomSupport));
+
+        /// <summary>Avalonia property backing <see cref="AnimationPreviewMode"/>.</summary>
+        public static readonly StyledProperty<AnimationPreviewMode> AnimationPreviewModeProperty =
+            AvaloniaProperty.Register<LevelCanvas, AnimationPreviewMode>(nameof(AnimationPreviewMode));
+
+        /// <summary>Avalonia property backing <see cref="AnimationPreviewObject"/>.</summary>
+        public static readonly StyledProperty<LevelObject?> AnimationPreviewObjectProperty =
+            AvaloniaProperty.Register<LevelCanvas, LevelObject?>(nameof(AnimationPreviewObject));
+
+        /// <summary>Avalonia property backing <see cref="AnimationPreviewElapsedSeconds"/>.</summary>
+        public static readonly StyledProperty<double> AnimationPreviewElapsedSecondsProperty =
+            AvaloniaProperty.Register<LevelCanvas, double>(nameof(AnimationPreviewElapsedSeconds));
 
         /// <summary>Avalonia property backing <see cref="HorizontalScrollMaximum"/>.</summary>
         public static readonly StyledProperty<double> HorizontalScrollMaximumProperty =
@@ -100,9 +117,10 @@ namespace CtrDxEditor.Rendering
             AffectsRender<LevelCanvas>(
                 DocumentProperty, SpritesProperty, ViewProperty, SnapEnabledProperty,
                 SelectedObjectProperty, LockedObjectProperty,
-                ShowHitboxesProperty, ShowMobileHitboxesProperty, ShowForceFieldsProperty,
+                ShowHitboxesProperty, ShowMobileHitboxesProperty, ShowForceFieldsProperty, ShowMovementPathsProperty,
                 ActiveRopeSkinProperty, ActiveBackgroundProperty, ActiveCandySkinProperty,
-                ActiveOmNomSupportProperty);
+                ActiveOmNomSupportProperty,
+                AnimationPreviewModeProperty, AnimationPreviewObjectProperty, AnimationPreviewElapsedSecondsProperty);
         }
 
         /// <summary>The loaded level document to render and edit.</summary>
@@ -132,6 +150,9 @@ namespace CtrDxEditor.Rendering
         /// <summary>Whether directional force-field arrows (e.g. the pump's flow) are drawn over objects.</summary>
         public bool ShowForceFields { get => GetValue(ShowForceFieldsProperty); set => SetValue(ShowForceFieldsProperty, value); }
 
+        /// <summary>Whether object movement path guides are drawn over objects.</summary>
+        public bool ShowMovementPaths { get => GetValue(ShowMovementPathsProperty); set => SetValue(ShowMovementPathsProperty, value); }
+
         /// <summary>Editor-decoration rope skin index applied to every rope (0 = default brown).</summary>
         public int ActiveRopeSkin { get => GetValue(ActiveRopeSkinProperty); set => SetValue(ActiveRopeSkinProperty, value); }
 
@@ -143,6 +164,15 @@ namespace CtrDxEditor.Rendering
 
         /// <summary>Editor-decoration Om Nom sitting platform index applied to the target (0 = default).</summary>
         public int ActiveOmNomSupport { get => GetValue(ActiveOmNomSupportProperty); set => SetValue(ActiveOmNomSupportProperty, value); }
+
+        /// <summary>Which live object-animation preview is active.</summary>
+        public AnimationPreviewMode AnimationPreviewMode { get => GetValue(AnimationPreviewModeProperty); set => SetValue(AnimationPreviewModeProperty, value); }
+
+        /// <summary>The object targeted by object-scoped live preview, or null.</summary>
+        public LevelObject? AnimationPreviewObject { get => GetValue(AnimationPreviewObjectProperty); set => SetValue(AnimationPreviewObjectProperty, value); }
+
+        /// <summary>Elapsed live-preview time in seconds.</summary>
+        public double AnimationPreviewElapsedSeconds { get => GetValue(AnimationPreviewElapsedSecondsProperty); set => SetValue(AnimationPreviewElapsedSecondsProperty, value); }
 
         /// <summary>Largest horizontal scroll offset in screen pixels.</summary>
         public double HorizontalScrollMaximum { get => GetValue(HorizontalScrollMaximumProperty); private set => SetValue(HorizontalScrollMaximumProperty, value); }
