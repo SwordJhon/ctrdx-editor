@@ -24,6 +24,8 @@ namespace CtrDxEditor.Content
         private const string PumpImageBase = "images/obj_pump";
         private const string SpikesJson = "images/obj_spikes.json";
         private const string SpikesImageBase = "images/obj_spikes";
+        private const string ElectrodesJson = "images/obj_electrodes.json";
+        private const string ElectrodesImageBase = "images/obj_electrodes";
 
         private static readonly VisualDescriptor[] All =
         [
@@ -227,6 +229,14 @@ namespace CtrDxEditor.Content
             new("spike2_toggled_2", [new SpriteLayer(SpikesJson, SpikesImageBase, 1), new SpriteLayer(SpikesJson, SpikesImageBase, 6)]),
             new("spike3_toggled_2", [new SpriteLayer(SpikesJson, SpikesImageBase, 2), new SpriteLayer(SpikesJson, SpikesImageBase, 6)]),
             new("spike4_toggled_2", [new SpriteLayer(SpikesJson, SpikesImageBase, 3), new SpriteLayer(SpikesJson, SpikesImageBase, 6)]),
+
+            // Electric sparks
+            new("electro", [new SpriteLayer(ElectrodesJson, ElectrodesImageBase, 1)]),
+            new("electro_off", [new SpriteLayer(ElectrodesJson, ElectrodesImageBase, 0)]),
+            new("electro_on_1", [new SpriteLayer(ElectrodesJson, ElectrodesImageBase, 1)]),
+            new("electro_on_2", [new SpriteLayer(ElectrodesJson, ElectrodesImageBase, 2)]),
+            new("electro_on_3", [new SpriteLayer(ElectrodesJson, ElectrodesImageBase, 3)]),
+            new("electro_on_4", [new SpriteLayer(ElectrodesJson, ElectrodesImageBase, 4)]),
         ];
 
         /// <summary>All visual descriptors keyed by object element name.</summary>

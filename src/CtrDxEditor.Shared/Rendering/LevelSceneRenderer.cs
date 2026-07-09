@@ -153,7 +153,7 @@ namespace CtrDxEditor.Rendering
 
             if (RotationTable.For(obj.Type) is { } rotSpec)
             {
-                string rotKey = SpikeObject.IsSpike(obj.Type) ? SpikeObject.SpriteKey(obj) : obj.Type;
+                string rotKey = PreviewSpriteKey(obj, animationPreviewSeconds);
                 if (sprites.GetSprite(CanvasSpriteKey(rotKey, nightLevel), candySkin, omNomSupport) is { } rotSprite)
                 {
                     double deg = ObjectRotation.DisplayDegrees(obj, rotSpec) + (spinRotation ?? 0.0);
@@ -166,7 +166,7 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
-            string spriteKey = SpikeObject.IsSpike(obj.Type) ? SpikeObject.SpriteKey(obj) : GrabRenderer.SpriteKey(obj);
+            string spriteKey = PreviewSpriteKey(obj, animationPreviewSeconds);
             ObjectSprite? sprite = sprites.GetSprite(CanvasSpriteKey(spriteKey, nightLevel), candySkin, omNomSupport);
             if (sprite is not null)
             {
@@ -177,6 +177,16 @@ namespace CtrDxEditor.Rendering
                 DrawSprite(ctx, v, sprite, x, y, spinRotation);
             }
             DrawOverlays(ctx, v, sprites, obj, x, y);
+        }
+
+        internal static string PreviewSpriteKey(LevelObject obj, double? animationPreviewSeconds)
+        {
+            return obj.Type switch
+            {
+                "electro" => ElectroAnimation.SpriteKey(obj, animationPreviewSeconds),
+                _ when SpikeObject.IsSpike(obj.Type) => SpikeObject.SpriteKey(obj),
+                _ => GrabRenderer.SpriteKey(obj),
+            };
         }
 
         private static Vec2 PreviewPosition(LevelObject obj, double? animationPreviewSeconds)
@@ -306,6 +316,40 @@ namespace CtrDxEditor.Rendering
             return dx == 0.0 && dy == 0.0
                 ? bounds
                 : new LevelBounds(bounds.X + dx, bounds.Y + dy, bounds.W, bounds.H);
+        }
+
+        /// <summary>Whether a level-space point is inside the selected object's drawn selection outline.</summary>
+        /// <param name="obj">The object whose selection outline is being hit-tested.</param>
+        /// <param name="bounds">The unrotated level-space selection bounds.</param>
+        /// <param name="point">Level-space point to test.</param>
+        /// <param name="previewRotationDegrees">Live-preview spin degrees to add to the authored rotation.</param>
+        /// <param name="animationPreviewSeconds">Elapsed live-preview seconds used to translate orbiting objects.</param>
+        /// <returns>True when <paramref name="point"/> lies inside the same rotated box drawn by <see cref="SelectionOutlinePointsWithPreview"/>.</returns>
+        public static bool SelectionContains(
+            LevelObject obj,
+            LevelBounds bounds,
+            Vec2 point,
+            double previewRotationDegrees = 0.0,
+            double? animationPreviewSeconds = null)
+        {
+            bounds = PreviewSelectionBounds(obj, bounds, animationPreviewSeconds);
+            double degrees = previewRotationDegrees
+                + (RotationTable.For(obj.Type) is { } rotSpec ? ObjectRotation.DisplayDegrees(obj, rotSpec) : 0.0);
+            if (degrees == 0)
+            {
+                return bounds.Contains(point);
+            }
+
+            Vec2 center = PreviewPosition(obj, animationPreviewSeconds);
+            double radians = -degrees * Math.PI / 180.0;
+            double sin = Math.Sin(radians);
+            double cos = Math.Cos(radians);
+            double dx = point.X - center.X;
+            double dy = point.Y - center.Y;
+            Vec2 unrotated = new(
+                center.X + (dx * cos) - (dy * sin),
+                center.Y + (dx * sin) + (dy * cos));
+            return bounds.Contains(unrotated);
         }
 
         private static Point ScreenPoint(ViewTransform v, double x, double y)
