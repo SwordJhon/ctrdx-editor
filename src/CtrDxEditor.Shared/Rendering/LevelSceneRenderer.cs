@@ -861,6 +861,96 @@ namespace CtrDxEditor.Rendering
             }
         }
 
+        /// <summary>Draws the movement path used by active DX mover data.</summary>
+        public static void DrawMovementPath(DrawingContext ctx, ViewTransform v, LevelObject obj, Pen pathPen, Pen arrowPen)
+        {
+            if (ObjectSpin.IsOrbital(obj))
+            {
+                DrawOrbitPath(ctx, v, obj, pathPen, arrowPen);
+                return;
+            }
+
+            Point[] points = ComputeMovementPathPoints(v, obj);
+            if (points.Length < 2)
+            {
+                return;
+            }
+
+            for (int i = 0; i < points.Length; i++)
+            {
+                ctx.DrawLine(pathPen, points[i], points[(i + 1) % points.Length]);
+            }
+
+            // A loop reads one way all the way round, so arrow every segment. A back-and-forth (retrace) path is
+            // stored as an out-and-back palindrome whose return segments overlap the outbound ones — arrowing all
+            // of them would draw contradictory '><' chevrons, so only arrow the outbound half (first length/2).
+            if (MoverPath.IsRetrace(obj.GetAttr("path")))
+            {
+                int outboundSegments = points.Length / 2;
+                for (int i = 0; i < outboundSegments; i++)
+                {
+                    DrawSegmentArrow(ctx, arrowPen, points[i], points[i + 1]);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < points.Length; i++)
+                {
+                    DrawSegmentArrow(ctx, arrowPen, points[i], points[(i + 1) % points.Length]);
+                }
+            }
+        }
+
+        /// <summary>Draws a small chevron at the midpoint of <paramref name="a"/>→<paramref name="b"/> pointing toward b.</summary>
+        private static void DrawSegmentArrow(DrawingContext ctx, Pen arrowPen, Point a, Point b)
+        {
+            double dx = b.X - a.X;
+            double dy = b.Y - a.Y;
+            double length = Math.Sqrt((dx * dx) + (dy * dy));
+            if (length < 12.0)
+            {
+                return;
+            }
+
+            double ux = dx / length;
+            double uy = dy / length;
+            Point mid = new((a.X + b.X) / 2.0, (a.Y + b.Y) / 2.0);
+
+            const double barb = 6.0;
+            const double cos = 0.866; // 30° barb spread
+            const double sin = 0.5;
+            double rx = -ux;
+            double ry = -uy;
+            Point left = new(mid.X + (barb * ((rx * cos) - (ry * sin))), mid.Y + (barb * ((rx * sin) + (ry * cos))));
+            Point right = new(mid.X + (barb * ((rx * cos) + (ry * sin))), mid.Y + (barb * ((-rx * sin) + (ry * cos))));
+            ctx.DrawLine(arrowPen, mid, left);
+            ctx.DrawLine(arrowPen, mid, right);
+        }
+
+        /// <summary>Computes screen-space points for the active DX movement path.</summary>
+        public static Point[] ComputeMovementPathPoints(ViewTransform v, LevelObject obj)
+        {
+            if (!MoverPath.HasActiveMovement(obj))
+            {
+                return [];
+            }
+
+            if (ObjectSpin.IsOrbital(obj))
+            {
+                return ComputeOrbitPathPoints(v, obj);
+            }
+
+            Vec2[] points = MoverPath.Points(new Vec2(obj.X, obj.Y), obj.GetAttr("path"));
+            Point[] screenPoints = new Point[points.Length];
+            for (int i = 0; i < points.Length; i++)
+            {
+                Vec2 screen = v.LevelToScreen(points[i]);
+                screenPoints[i] = new Point(screen.X, screen.Y);
+            }
+
+            return screenPoints;
+        }
+
         /// <summary>Computes screen-space points for the circular orbit path centered on authored object coordinates.</summary>
         public static Point[] ComputeOrbitPathPoints(ViewTransform v, LevelObject obj)
         {

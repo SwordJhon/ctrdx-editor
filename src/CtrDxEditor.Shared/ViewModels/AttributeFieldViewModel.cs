@@ -19,6 +19,7 @@ namespace CtrDxEditor.ViewModels
         private readonly Action<string?> _set;
         private readonly Action _onChanging;
         private readonly Action _onChanged;
+        private readonly Func<bool>? _isEnabledFn;
 
         /// <summary>Attribute-backed field (text, number, bool, or fixed enum).</summary>
         public AttributeFieldViewModel(
@@ -35,7 +36,7 @@ namespace CtrDxEditor.ViewModels
             IsNumeric = type is AttrType.Whole or AttrType.Number;
             AllowsDecimal = type == AttrType.Number;
             EnumValues = enumValues;
-            EnumOptions = enumValues?.Select(v => new AttributeOptionViewModel(v, LabelForOption(name, v))).ToArray();
+            EnumOptions = enumValues?.Select(v => new AttributeOptionViewModel(v, Localizer.AttributeOption(name, v))).ToArray();
             _get = () => target.GetAttr(name);
             _set = v => target.SetAttr(name, v ?? string.Empty);
             _onChanging = onChanging ?? (() => { });
@@ -61,14 +62,19 @@ namespace CtrDxEditor.ViewModels
             _onChanged = onChanged;
         }
 
-        /// <summary>Delegate-backed simple field (bool/text/number) with no fixed option list.</summary>
+        /// <summary>
+        /// Delegate-backed simple field (bool/text/number) with no fixed option list. The optional
+        /// <paramref name="isEnabled"/> predicate greys the field out when it returns false (re-evaluated on
+        /// <see cref="Refresh"/>).
+        /// </summary>
         public AttributeFieldViewModel(
             string name,
             AttrType type,
             Func<string?> get,
             Action<string?> set,
             Action onChanged,
-            Action? onChanging = null)
+            Action? onChanging = null,
+            Func<bool>? isEnabled = null)
         {
             Name = name;
             Label = Localizer.AttributeName(name);
@@ -79,6 +85,11 @@ namespace CtrDxEditor.ViewModels
             _set = set;
             _onChanging = onChanging ?? (() => { });
             _onChanged = onChanged;
+            _isEnabledFn = isEnabled;
+            if (isEnabled is not null)
+            {
+                IsEnabled = isEnabled();
+            }
         }
 
         /// <summary>The raw attribute id / field key (never localized).</summary>
@@ -110,7 +121,7 @@ namespace CtrDxEditor.ViewModels
         public int NumericMinimum => Name switch
         {
             "timeout" => 1,
-            "spinSpeed" or "orbitRadius" or "orbitSpeed" => 1,
+            "spinSpeed" or "orbitRadius" or "orbitSpeed" or "polylineSpeed" => 1,
             "length" or "radius" or "moveLength" or "moveOffset" or "litRadius" => 0,
             _ => -9999,
         };
@@ -167,18 +178,10 @@ namespace CtrDxEditor.ViewModels
             OnPropertyChanged(nameof(Value));
             OnPropertyChanged(nameof(SelectedOption));
             OnPropertyChanged(nameof(BoolValue));
-        }
-
-        private static string LabelForOption(string attribute, string value)
-        {
-            return attribute == "part"
-                ? value switch
-                {
-                    "L" => "left",
-                    "R" => "right",
-                    _ => value,
-                }
-                : value;
+            if (_isEnabledFn is not null)
+            {
+                IsEnabled = _isEnabledFn();
+            }
         }
 
         private string? DisplayValue(string? value)

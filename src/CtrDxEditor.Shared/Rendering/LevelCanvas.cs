@@ -235,6 +235,18 @@ namespace CtrDxEditor.Rendering
         /// <summary>True while the cursor hovers the selected object's rotation knob (lights it up).</summary>
         private bool _dialKnobHovered;
 
+        /// <summary>Canonical waypoint currently being dragged, or -1 when no path point drag is active.</summary>
+        private int _polylinePointDrag = -1;
+
+        /// <summary>Canonical waypoint currently under the pointer, or -1.</summary>
+        private int _polylineHoverPoint = -1;
+
+        /// <summary>True while the pointer is over the append nub of the selected polyline.</summary>
+        private bool _polylineNubHot;
+
+        /// <summary>True while hovering the end of a selected polyline that has hit its point cap (shows the limit hint).</summary>
+        private bool _polylineAtLimitHint;
+
         /// <summary>Level-space offset from the dragged object's origin to the pointer, held constant during a drag.</summary>
         private Vec2 _dragOffset;
 
@@ -332,6 +344,24 @@ namespace CtrDxEditor.Rendering
                      && !_syncingScroll)
             {
                 ScrollTo(HorizontalScrollValue, VerticalScrollValue);
+            }
+            else if (change.Property == SelectedObjectProperty)
+            {
+                _polylinePointDrag = -1;
+                ResetPolylineHover();
+            }
+        }
+
+        /// <summary>Clears selected-polyline hover chrome and repaints when it was visible.</summary>
+        private void ResetPolylineHover()
+        {
+            bool changed = _polylineHoverPoint != -1 || _polylineNubHot || _polylineAtLimitHint;
+            _polylineHoverPoint = -1;
+            _polylineNubHot = false;
+            _polylineAtLimitHint = false;
+            if (changed)
+            {
+                InvalidateVisual();
             }
         }
 

@@ -32,6 +32,53 @@ namespace CtrDxEditor.Tests
             Assert.Contains("vm.ShowMovementPaths = !vm.ShowMovementPaths;", codeBehind, StringComparison.Ordinal);
         }
 
+        /// <summary>Retrace is exposed as a polyline property field driven by SetRetrace.</summary>
+        [Fact]
+        public void RetraceIsExposedAsPolylineField()
+        {
+            string builder = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "ViewModels", "SpinFieldBuilder.cs"));
+
+            Assert.Contains("polylineRetrace", builder, StringComparison.Ordinal);
+            Assert.Contains("MoverPath.SetRetrace", builder, StringComparison.Ordinal);
+            Assert.Contains("MoverPath.IsRetrace", builder, StringComparison.Ordinal);
+            Assert.DoesNotContain("polylineLoop", builder, StringComparison.Ordinal);
+        }
+
+        /// <summary>The polyline editor has no mode toggle anywhere in the view or view model.</summary>
+        [Fact]
+        public void PolylineEditingHasNoModeToggle()
+        {
+            string view = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml"));
+            string vm = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "ViewModels", "EditorViewModel.cs"));
+            string canvas = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Rendering", "LevelCanvas.cs"));
+
+            Assert.DoesNotContain("PolylineEditMode", view, StringComparison.Ordinal);
+            Assert.DoesNotContain("PolylineEditMode", vm, StringComparison.Ordinal);
+            Assert.DoesNotContain("Menu.Edit.PolylineEditPoints", view, StringComparison.Ordinal);
+            Assert.Contains("CanEditPolyline", vm, StringComparison.Ordinal);
+            Assert.Contains("change.Property == SelectedObjectProperty", canvas, StringComparison.Ordinal);
+            Assert.Contains("ResetPolylineHover();", canvas, StringComparison.Ordinal);
+        }
+
+        /// <summary>Polyline gestures append via the nub and delete single vertices; the old mode/truncate paths are gone.</summary>
+        [Fact]
+        public void PolylineGesturesUseNubAppendAndSingleVertexDelete()
+        {
+            string input = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Rendering", "LevelCanvas.Input.cs"));
+            string rendering = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Rendering", "LevelCanvas.Rendering.cs"));
+
+            Assert.Contains("HitPolylineNub", input, StringComparison.Ordinal);
+            Assert.Contains("MoverPath.AppendCanonicalPoint", input, StringComparison.Ordinal);
+            Assert.Contains("MoverPath.DeleteCanonicalPoint", input, StringComparison.Ordinal);
+            Assert.Contains("MoverPath.MoveCanonicalPoint", input, StringComparison.Ordinal);
+            Assert.Contains("MoverPath.InsertCanonicalPoint", input, StringComparison.Ordinal);
+            Assert.Contains("MoverPath.CanAddCanonicalPoint", input, StringComparison.Ordinal);
+            Assert.DoesNotContain("PolylineEditMode", input, StringComparison.Ordinal);
+            Assert.DoesNotContain("MoverPath.TruncateCanonicalFrom", input, StringComparison.Ordinal);
+            Assert.DoesNotContain("_altCloseHot", rendering, StringComparison.Ordinal);
+            Assert.Contains("DrawPolylinePointHandles", rendering, StringComparison.Ordinal);
+        }
+
         private static string SourcePath(params string[] parts)
         {
             string path = AppContext.BaseDirectory;

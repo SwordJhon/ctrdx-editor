@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 using Avalonia;
@@ -10,6 +11,7 @@ using CtrDxEditor.Content;
 using CtrDxEditor.Core.Document;
 using CtrDxEditor.Core.Editing;
 using CtrDxEditor.Core.Geometry;
+using CtrDxEditor.Localization;
 
 namespace CtrDxEditor.Rendering
 {
@@ -79,7 +81,7 @@ namespace CtrDxEditor.Rendering
             {
                 if (ShowMovementPaths)
                 {
-                    LevelSceneRenderer.DrawOrbitPath(context, v, obj, _palette.OrbitPath, _palette.OrbitPathArrow);
+                    LevelSceneRenderer.DrawMovementPath(context, v, obj, _palette.OrbitPath, _palette.OrbitPathArrow);
                 }
                 if (!IsAnimationPreviewing(obj))
                 {
@@ -128,7 +130,9 @@ namespace CtrDxEditor.Rendering
                 }
             }
 
-            LevelObject? selected = SelectedObject;
+            // Selection chrome (outline, edit handles, rotation dial) is hidden while the selected object is a
+            // moving preview target — it isn't pickable, and drawing chrome at its stale home position would mislead.
+            LevelObject? selected = SelectedObject is { } s && !IsAnimatingInPreview(s) ? s : null;
             if (selected is not null)
             {
                 LevelBounds sb = LevelSceneRenderer.SelectionBounds(sprites, selected, ActiveCandySkin, ActiveOmNomSupport, doc.NightLevel);
@@ -139,6 +143,7 @@ namespace CtrDxEditor.Rendering
                 {
                     context.DrawLine(pen, points[i], points[(i + 1) % points.Length]);
                 }
+                DrawPolylinePointHandles(context, v, selected);
             }
 
             if (selected is not null && RotationTable.For(selected.Type) is { } rotSpec)
@@ -155,6 +160,99 @@ namespace CtrDxEditor.Rendering
                     LevelSceneRenderer.DrawSpritePreview(context, v, ghostSprite, ghostElement, _ghostLevel.X, _ghostLevel.Y);
                 }
             }
+
+            if (_polylineAtLimitHint && SelectedObject is { } limitObj)
+            {
+                DrawPolylineLimitHint(context, v, limitObj);
+            }
+        }
+
+        /// <summary>
+        /// Draws a small labelled hint at the end of a full polyline, explaining why the append nub is gone once
+        /// the path has hit its stored-point cap.
+        /// </summary>
+        private void DrawPolylineLimitHint(DrawingContext context, ViewTransform v, LevelObject obj)
+        {
+            Vec2 nub = v.LevelToScreen(PolylineNubPoint(obj));
+            FormattedText text = new(
+                Localizer.Get("Hint.PolylinePointLimit"),
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                new Typeface(FontFamily.DefaultFontFamilyName),
+                12.0,
+                Brushes.White);
+
+            Point origin = new(nub.X + 12.0, nub.Y - (text.Height / 2.0));
+            Rect box = new(origin.X - 6.0, origin.Y - 3.0, text.Width + 12.0, text.Height + 6.0);
+            context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 0, 0, 0)), box, 4.0f);
+            context.DrawText(text, origin);
+        }
+
+        /// <summary>Draws editable handles, segment inserts, and the append nub for the selected polyline path.</summary>
+        private void DrawPolylinePointHandles(DrawingContext context, ViewTransform v, LevelObject obj)
+        {
+            string? path = obj.GetAttr("path");
+            if (string.IsNullOrWhiteSpace(path) || MoverPath.IsCircularPath(path))
+            {
+                return;
+            }
+
+            Vec2[] points = MoverPath.CanonicalPoints(new Vec2(obj.X, obj.Y), path);
+            if (points.Length < 2)
+            {
+                return;
+            }
+
+            bool canAddPoint = MoverPath.CanAddCanonicalPoint(new Vec2(obj.X, obj.Y), path);
+
+            // Segment midpoint insert dots use fuller opacity so they read as interactive handles.
+            if (canAddPoint)
+            {
+                using (context.PushOpacity(0.6))
+                {
+                    for (int i = 0; i < points.Length - 1; i++)
+                    {
+                        Vec2 midpoint = new(
+                            (points[i].X + points[i + 1].X) / 2,
+                            (points[i].Y + points[i + 1].Y) / 2);
+                        Vec2 screen = v.LevelToScreen(midpoint);
+                        context.DrawEllipse(Brushes.White, _palette.OrbitPathArrow,
+                            new Point(screen.X, screen.Y), 3, 3);
+                    }
+                }
+            }
+
+            // Waypoint handles are solid, with an outer ring when hovered or dragged.
+            for (int i = 1; i < points.Length; i++)
+            {
+                Vec2 screen = v.LevelToScreen(points[i]);
+                Point center = new(screen.X, screen.Y);
+                context.DrawEllipse(Brushes.White, _palette.OrbitPathArrow, center, 5, 5);
+                if (i == _polylineHoverPoint || i == _polylinePointDrag)
+                {
+                    context.DrawEllipse(null, _palette.OrbitPathArrow, center, 8, 8);
+                }
+            }
+
+            if (!canAddPoint)
+            {
+                return;
+            }
+
+            // The append nub follows the tip and fills when hovered.
+            Vec2 nub = PolylineNubPoint(obj);
+            Vec2 nubScreen = v.LevelToScreen(nub);
+            Point nubCenter = new(nubScreen.X, nubScreen.Y);
+            context.DrawEllipse(
+                _polylineNubHot ? Brushes.White : Brushes.Transparent,
+                _palette.OrbitPathArrow,
+                nubCenter,
+                7,
+                7);
+            context.DrawLine(_palette.OrbitPathArrow,
+                new Point(nubScreen.X - 3, nubScreen.Y), new Point(nubScreen.X + 3, nubScreen.Y));
+            context.DrawLine(_palette.OrbitPathArrow,
+                new Point(nubScreen.X, nubScreen.Y - 3), new Point(nubScreen.X, nubScreen.Y + 3));
         }
 
         /// <summary>
@@ -327,6 +425,16 @@ namespace CtrDxEditor.Rendering
         {
             return AnimationPreviewMode == CtrDxEditor.ViewModels.AnimationPreviewMode.All
                 || (AnimationPreviewMode == CtrDxEditor.ViewModels.AnimationPreviewMode.Focused && Equals(AnimationPreviewObject, obj));
+        }
+
+        /// <summary>
+        /// True when the object is animating during preview — moving along a path/orbit or spinning in place — so
+        /// its drawn transform no longer matches its authored one. Such an object can't be picked and its selection
+        /// chrome (outline, handles, rotation ring) is hidden until the preview stops.
+        /// </summary>
+        private bool IsAnimatingInPreview(LevelObject obj)
+        {
+            return IsAnimationPreviewing(obj) && (MoverPath.HasActiveMovement(obj) || ObjectSpin.IsSpinning(obj));
         }
 
         private double PreviewSpinDegrees(LevelObject obj)
