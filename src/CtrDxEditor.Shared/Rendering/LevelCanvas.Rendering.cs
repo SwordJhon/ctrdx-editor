@@ -75,7 +75,7 @@ namespace CtrDxEditor.Rendering
 
             IReadOnlyList<LevelObject> objects = doc.Objects;
 
-            GrabRenderer.DrawRadiusRings(context, v, objects, _palette.GrabRadius, _palette.BulbRadius);
+            GrabRenderer.DrawRadiusRings(context, v, objects, _palette.GrabRadius, _palette.BulbRadius, PreviewAnimationSeconds);
 
             foreach (LevelObject obj in objects)
             {
@@ -367,6 +367,20 @@ namespace CtrDxEditor.Rendering
                 context.Custom(new GlowDrawOperation(opBounds, v, glowLayer.Bitmap, glowLayer.Frame.Frame, glowBulbs));
             }
 
+            // DX batches every grab's pollen into one global pass before scene objects. Preserve object-list
+            // insertion order so deterministic particle indices match the game's shared pollen drawer.
+            int pollenIndex = 0;
+            foreach (LevelObject grab in objects.Where(o => o.Type == "grab"))
+            {
+                pollenIndex = LevelSceneRenderer.DrawGrabPollen(
+                    context,
+                    v,
+                    sprites,
+                    grab,
+                    useAnimationPreview && IsAnimationPreviewing(grab) ? AnimationPreviewElapsedSeconds : null,
+                    pollenIndex);
+            }
+
             // Draw in the game's fixed z-order (GameScene.Draw), a stable sort so same-layer objects keep list order.
             int ropeSeed = 0;
             foreach (LevelObject obj in objects.OrderBy(LevelSceneRenderer.GameDrawLayer))
@@ -377,7 +391,9 @@ namespace CtrDxEditor.Rendering
                     // The movable hook lights up while the selected grab's hook is hovered or being slid.
                     bool hookHighlighted =
                         (_railDrag == GrabRail.Handle.SlideHook || _hookHovered) && Equals(obj, SelectedObject);
-                    LevelSceneRenderer.DrawGrab(context, v, sprites, obj, objects, doc.TwoParts, rope, ropeSeed, opBounds, hookHighlighted);
+                    LevelSceneRenderer.DrawGrab(
+                        context, v, sprites, obj, objects, doc.TwoParts, rope, ropeSeed, opBounds, hookHighlighted,
+                        useAnimationPreview && IsAnimationPreviewing(obj) ? AnimationPreviewElapsedSeconds : null);
                     if (rope is not null)
                     {
                         ropeSeed++;
@@ -425,8 +441,8 @@ namespace CtrDxEditor.Rendering
 
         private bool IsAnimationPreviewing(LevelObject obj)
         {
-            return AnimationPreviewMode == CtrDxEditor.ViewModels.AnimationPreviewMode.All
-                || (AnimationPreviewMode == CtrDxEditor.ViewModels.AnimationPreviewMode.Focused && Equals(AnimationPreviewObject, obj));
+            return AnimationPreviewMode == ViewModels.AnimationPreviewMode.All
+                || (AnimationPreviewMode == ViewModels.AnimationPreviewMode.Focused && Equals(AnimationPreviewObject, obj));
         }
 
         /// <summary>
