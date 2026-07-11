@@ -216,6 +216,15 @@ namespace CtrDxEditor.Rendering
         /// <summary>True while dragging a grab's auto-catch radius ring to resize it.</summary>
         private bool _resizingRadius;
 
+        /// <summary>Rotation mapping used only while previewing a ghost's small-bouncer morph.</summary>
+        private static readonly RotationSpec GhostBouncerRotation = new(DisplayOffset: 0);
+
+        /// <summary>Ephemeral morph preview for the selected ghost, reset whenever selection changes.</summary>
+        private readonly GhostPreviewState _ghostPreview = new();
+
+        /// <summary>Screen-space state-selector hit targets populated while the ghost badge is drawn.</summary>
+        private readonly System.Collections.Generic.List<(Rect Rect, GhostMorph Morph)> _ghostIconHits = [];
+
         /// <summary>
         /// Which movable-rail handle the current drag is manipulating (slide the hook or resize an end);
         /// <see cref="GrabRail.Handle.None"/> when no rail drag is in progress. A <see cref="GrabRail.Handle.MoveBar"/>
@@ -268,14 +277,14 @@ namespace CtrDxEditor.Rendering
         /// <summary>True when a fit-to-view is queued, waiting for the control to be laid out with non-zero bounds.</summary>
         private bool _pendingFit;
 
-        /// <summary>True while a translucent palette drag-ghost is being shown.</summary>
-        private bool _ghostActive;
+        /// <summary>True while a translucent palette drag preview is being shown.</summary>
+        private bool _dragPreviewActive;
 
-        /// <summary>Element id of the palette drag-ghost, or null when none is active.</summary>
-        private string? _ghostElement;
+        /// <summary>Element id of the palette drag preview, or null when none is active.</summary>
+        private string? _dragPreviewElement;
 
-        /// <summary>Snapped level-space position of the drag-ghost.</summary>
-        private Vec2 _ghostLevel;
+        /// <summary>Snapped level-space position of the drag preview.</summary>
+        private Vec2 _dragPreviewLevel;
 
         /// <summary>Editor-chrome brushes/pens resolved from the theme once per theme change, not per Render.</summary>
         private readonly CanvasPalette _palette = new();
@@ -347,8 +356,11 @@ namespace CtrDxEditor.Rendering
             }
             else if (change.Property == SelectedObjectProperty)
             {
+                _ghostPreview.Clear();
+                _ghostIconHits.Clear();
                 _polylinePointDrag = -1;
                 ResetPolylineHover();
+                InvalidateVisual();
             }
         }
 

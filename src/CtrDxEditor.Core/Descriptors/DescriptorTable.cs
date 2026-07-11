@@ -127,6 +127,16 @@ namespace CtrDxEditor.Core.Descriptors
             // Gravity button
             new ObjectDescriptor("gravitySwitch", "Gravity Switch", [], MaxCount: int.MaxValue),
 
+            // Ghost
+            new ObjectDescriptor("ghost", "Ghost",
+            [
+                new AttributeSpec("grab", AttrType.Bool, "true"),
+                new AttributeSpec("bubble", AttrType.Bool, "false"),
+                new AttributeSpec("bouncer", AttrType.Bool, "false"),
+                new AttributeSpec("radius", AttrType.Whole, "50"),
+                new AttributeSpec("angle", AttrType.Number, "0"),
+            ], MaxCount: int.MaxValue),
+
             // Light bulb
             new ObjectDescriptor("lightBulb", "Light Bulb",
             [

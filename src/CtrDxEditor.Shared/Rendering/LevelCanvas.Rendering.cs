@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Xml.Linq;
 
 using Avalonia;
 using Avalonia.Media;
@@ -71,6 +72,13 @@ namespace CtrDxEditor.Rendering
             }
 
             ViewTransform v = View;
+            _ghostIconHits.Clear();
+            if (SelectedObject is { Type: "ghost" } selectedGhost
+                && _ghostPreview.Active is { } activeMorph
+                && !GhostStates.Enabled(selectedGhost).Contains(activeMorph))
+            {
+                _ghostPreview.Clear();
+            }
             DrawLevelContent(context, v, Bounds.Size, doc, sprites, drawGrid: true, grabRadiusPen: null, useAnimationPreview: true);
 
             IReadOnlyList<LevelObject> objects = doc.Objects;
@@ -104,6 +112,36 @@ namespace CtrDxEditor.Rendering
                     if (ShowMobileHitboxes)
                     {
                         LevelSceneRenderer.DrawHitbox(context, v, obj, sprite.Scale, HitboxModel.Phone, _palette.HitboxPhone, PreviewSpinDegrees(obj), PreviewAnimationSeconds(obj));
+                    }
+                }
+
+                // A selected ghost previewing a bubble/bouncer morph shows that transformed object's
+                // hitbox. The ghost has no HitboxTable row, so render the morph's hitbox through a
+                // throwaway proxy of the morph's element type at the ghost's position (never persisted).
+                // DrawHitbox reads rotation from RotationTable keyed on the proxy's type, so copying the
+                // ghost's angle onto a bouncer1 proxy rotates its hitbox exactly like a real bouncer.
+                if (SelectedObject is { Type: "ghost" } hbGhost
+                    && _ghostPreview.MorphHitboxElement is { } hbElement)
+                {
+                    XElement proxyEl = new(hbElement);
+                    proxyEl.SetAttributeValue("x", hbGhost.X.ToString(CultureInfo.InvariantCulture));
+                    proxyEl.SetAttributeValue("y", hbGhost.Y.ToString(CultureInfo.InvariantCulture));
+                    if (hbElement == "bouncer1")
+                    {
+                        proxyEl.SetAttributeValue("angle", hbGhost.GetAttr("angle") ?? "0");
+                    }
+
+                    LevelObject proxy = new(proxyEl);
+                    if (sprites.GetSprite(LevelSceneRenderer.CanvasSpriteKey(proxy, doc.NightLevel), ActiveCandySkin, ActiveOmNomSupport) is { } proxySprite)
+                    {
+                        if (ShowHitboxes)
+                        {
+                            LevelSceneRenderer.DrawHitbox(context, v, proxy, proxySprite.Scale, HitboxModel.Desktop, _palette.HitboxDesktop);
+                        }
+                        if (ShowMobileHitboxes)
+                        {
+                            LevelSceneRenderer.DrawHitbox(context, v, proxy, proxySprite.Scale, HitboxModel.Phone, _palette.HitboxPhone);
+                        }
                     }
                 }
             }
@@ -144,22 +182,45 @@ namespace CtrDxEditor.Rendering
                     context.DrawLine(pen, points[i], points[(i + 1) % points.Length]);
                 }
                 DrawPolylinePointHandles(context, v, selected);
+
+                if (selected.Type == "ghost")
+                {
+                    DrawGhostBadge(context, v, selected, points);
+                    if (_ghostPreview.ShowsRadiusRing(selected)
+                        && GrabRadius.Of(selected) is double ghostRadius)
+                    {
+                        Vec2 center = v.LevelToScreen(new Vec2(selected.X, selected.Y));
+                        double screenRadius = ghostRadius * v.Zoom;
+                        context.DrawEllipse(
+                            null,
+                            _palette.GrabRadius,
+                            new Point(center.X, center.Y),
+                            screenRadius,
+                            screenRadius);
+                    }
+                }
             }
 
-            if (selected is not null && RotationTable.EditableFor(selected.Type) is { } rotSpec)
+            if (selected is not null && EditableRotationSpec(selected) is { } rotSpec)
             {
                 RotationDialRenderer.Draw(context, v, selected, rotSpec, _rotating || _dialKnobHovered);
             }
 
-            // Translucent ghost of the object being dragged from the palette, at its snapped drop spot.
-            if (_ghostActive && _ghostElement is { } ghostElement
+            // Translucent preview of the object being dragged from the palette, at its snapped drop spot.
+            if (_dragPreviewActive && _dragPreviewElement is { } dragPreviewElement
                 && sprites.GetSprite(LevelSceneRenderer.CanvasSpriteKey(
-                    ghostElement == "sock" && SpecialEvents.IsXmas ? "sock_xmas" : ghostElement,
-                    doc.NightLevel), ActiveCandySkin, ActiveOmNomSupport) is { } ghostSprite)
+                    dragPreviewElement == "sock" && SpecialEvents.IsXmas ? "sock_xmas" : dragPreviewElement,
+                    doc.NightLevel), ActiveCandySkin, ActiveOmNomSupport) is { } dragPreviewSprite)
             {
                 using (context.PushOpacity(0.7))
                 {
-                    LevelSceneRenderer.DrawSpritePreview(context, v, ghostSprite, ghostElement, _ghostLevel.X, _ghostLevel.Y);
+                    LevelSceneRenderer.DrawSpritePreview(
+                        context,
+                        v,
+                        dragPreviewSprite,
+                        dragPreviewElement,
+                        _dragPreviewLevel.X,
+                        _dragPreviewLevel.Y);
                 }
             }
 
@@ -167,6 +228,116 @@ namespace CtrDxEditor.Rendering
             {
                 DrawPolylineLimitHint(context, v, limitObj);
             }
+        }
+
+        /// <summary>Draws the selected ghost's enabled-state selector badge and records its hit targets.</summary>
+        private void DrawGhostBadge(DrawingContext context, ViewTransform v, LevelObject ghost, Point[] outline)
+        {
+            IReadOnlyList<GhostMorph> states = GhostStates.Enabled(ghost);
+            if (states.Count == 0)
+            {
+                return;
+            }
+
+            const double height = 26;
+            const double cellPadding = 14;
+            const double separatorGap = 10;
+            Typeface typeface = new(FontFamily.DefaultFontFamilyName, FontStyle.Normal, FontWeight.SemiBold);
+
+            // Measure each state's localized label (reusing the object names) so the badge fits its
+            // text in any language instead of assuming fixed-width abbreviations.
+            FormattedText[] labels = new FormattedText[states.Count];
+            double[] cellWidths = new double[states.Count];
+            double contentWidth = 0;
+            for (int i = 0; i < states.Count; i++)
+            {
+                labels[i] = new FormattedText(
+                    GhostMorphLabel(states[i]),
+                    CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight,
+                    typeface,
+                    12,
+                    Brushes.White);
+                cellWidths[i] = labels[i].Width + cellPadding;
+                contentWidth += cellWidths[i];
+            }
+
+            double separatorsWidth = Math.Max(0, states.Count - 1) * separatorGap;
+            double width = contentWidth + separatorsWidth + 12;
+            double centerX = v.LevelToScreen(new Vec2(ghost.X, ghost.Y)).X;
+            double top = outline.Min(p => p.Y) - height - 12;
+            Rect bubble = new(centerX - (width / 2), top, width, height);
+            context.FillRectangle(new SolidColorBrush(Color.FromArgb(225, 25, 29, 36)), bubble, 6);
+
+            double x = bubble.X + 6;
+            for (int i = 0; i < states.Count; i++)
+            {
+                GhostMorph morph = states[i];
+                Rect hit = new(x, top + 3, cellWidths[i], height - 6);
+                if (_ghostPreview.Active == morph)
+                {
+                    context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 46, 139, 255)), hit, 4);
+                }
+
+                context.DrawText(labels[i], new Point(hit.Center.X - (labels[i].Width / 2), hit.Center.Y - (labels[i].Height / 2)));
+                _ghostIconHits.Add((hit, morph));
+                x += cellWidths[i];
+
+                if (i < states.Count - 1)
+                {
+                    FormattedText separator = new(
+                        "|",
+                        CultureInfo.CurrentCulture,
+                        FlowDirection.LeftToRight,
+                        new Typeface(FontFamily.DefaultFontFamilyName),
+                        12,
+                        Brushes.LightGray);
+                    context.DrawText(separator, new Point(x + 2, top + ((height - separator.Height) / 2)));
+                    x += separatorGap;
+                }
+            }
+        }
+
+        /// <summary>The localized selector label for a ghost morph, matching its property-panel toggle.</summary>
+        private static string GhostMorphLabel(GhostMorph morph)
+        {
+            return morph switch
+            {
+                GhostMorph.Grab => Localizer.AttributeName("grab"),
+                GhostMorph.Bubble => Localizer.AttributeName("bubble"),
+                GhostMorph.Bouncer => Localizer.AttributeName("bouncer"),
+                _ => "?",
+            };
+        }
+
+        /// <summary>Draws the active ghost morph in place of the ordinary ghost sprite.</summary>
+        private void DrawGhostMorphPreview(
+            DrawingContext context,
+            ViewTransform v,
+            SpriteCache sprites,
+            LevelObject ghost)
+        {
+            if (_ghostPreview.MorphSpriteKey is not { } spriteKey
+                || sprites.GetSprite(spriteKey) is not { } sprite)
+            {
+                return;
+            }
+
+            if (_ghostPreview.Active == GhostMorph.Bouncer)
+            {
+                Vec2 center = v.LevelToScreen(new Vec2(ghost.X, ghost.Y));
+                double degrees = ObjectRotation.StoredAngle(ghost, GhostBouncerRotation);
+                Matrix transform = Matrix.CreateTranslation(-center.X, -center.Y)
+                    * Matrix.CreateRotation(degrees * Math.PI / 180.0)
+                    * Matrix.CreateTranslation(center.X, center.Y);
+                using (context.PushTransform(transform))
+                {
+                    LevelSceneRenderer.DrawSpritePreview(context, v, sprite, spriteKey, ghost.X, ghost.Y);
+                }
+                return;
+            }
+
+            LevelSceneRenderer.DrawSpritePreview(context, v, sprite, spriteKey, ghost.X, ghost.Y);
         }
 
         /// <summary>
@@ -398,6 +569,13 @@ namespace CtrDxEditor.Rendering
                     {
                         ropeSeed++;
                     }
+                }
+                else if (useAnimationPreview
+                         && obj.Type == "ghost"
+                         && Equals(obj, SelectedObject)
+                         && _ghostPreview.Active is not null)
+                {
+                    DrawGhostMorphPreview(context, v, sprites, obj);
                 }
                 else
                 {
