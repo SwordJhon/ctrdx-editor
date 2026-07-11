@@ -24,6 +24,26 @@ namespace CtrDxEditor.Core.Tests
             Assert.True(t.Knows("spike3"));
             Assert.True(t.Knows("spike4"));
             Assert.True(t.Knows("electro"));
+            Assert.True(t.Knows("sock"));
+        }
+
+        /// <summary>Verifies magic hats expose the transporter group as a free whole-number field.</summary>
+        [Fact]
+        public void SockHasTeleportGroupDefaultingToZero()
+        {
+            ObjectDescriptor sock = DescriptorTable.Default.For("sock")!;
+
+            Assert.Equal("Magic Hat", sock.DisplayName);
+            Assert.Equal(int.MaxValue, sock.MaxCount);
+            AttributeSpec group = Assert.Single(sock.Attributes, a => a.Name == "group");
+            Assert.Equal("group", group.Name);
+            Assert.Equal(AttrType.Whole, group.Type);
+            Assert.Equal("0", group.Default);
+            Assert.Null(group.EnumValues);
+            Assert.Equal("sockGroup", group.LocalizationName);
+            AttributeSpec angle = Assert.Single(sock.Attributes, a => a.Name == "angle");
+            Assert.Equal(AttrType.Number, angle.Type);
+            Assert.Equal("0", angle.Default);
         }
 
         /// <summary>Verifies that bubble is unbounded and has no editable attributes (game reads only x/y).</summary>

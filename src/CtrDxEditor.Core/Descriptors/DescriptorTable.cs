@@ -100,6 +100,17 @@ namespace CtrDxEditor.Core.Descriptors
                 new AttributeSpec("angle", AttrType.Number, "0"),
             ], MaxCount: int.MaxValue),
 
+            // Magic hat teleporter (Christmas sock during the seasonal event)
+            new ObjectDescriptor("sock", "Magic Hat",
+            [
+                new AttributeSpec(
+                    "group",
+                    AttrType.Whole,
+                    "0",
+                    LocalizationName: "sockGroup"),
+                new AttributeSpec("angle", AttrType.Number, "0"),
+            ], MaxCount: int.MaxValue),
+
             // Gravity button
             new ObjectDescriptor("gravitySwitch", "Gravity Switch", [], MaxCount: int.MaxValue),
 

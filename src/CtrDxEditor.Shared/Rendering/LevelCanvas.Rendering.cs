@@ -146,14 +146,16 @@ namespace CtrDxEditor.Rendering
                 DrawPolylinePointHandles(context, v, selected);
             }
 
-            if (selected is not null && RotationTable.For(selected.Type) is { } rotSpec)
+            if (selected is not null && RotationTable.EditableFor(selected.Type) is { } rotSpec)
             {
                 RotationDialRenderer.Draw(context, v, selected, rotSpec, _rotating || _dialKnobHovered);
             }
 
             // Translucent ghost of the object being dragged from the palette, at its snapped drop spot.
             if (_ghostActive && _ghostElement is { } ghostElement
-                && sprites.GetSprite(LevelSceneRenderer.CanvasSpriteKey(ghostElement, doc.NightLevel), ActiveCandySkin, ActiveOmNomSupport) is { } ghostSprite)
+                && sprites.GetSprite(LevelSceneRenderer.CanvasSpriteKey(
+                    ghostElement == "sock" && SpecialEvents.IsXmas ? "sock_xmas" : ghostElement,
+                    doc.NightLevel), ActiveCandySkin, ActiveOmNomSupport) is { } ghostSprite)
             {
                 using (context.PushOpacity(0.7))
                 {
@@ -191,12 +193,12 @@ namespace CtrDxEditor.Rendering
         /// <summary>Draws editable handles, segment inserts, and the append nub for the selected polyline path.</summary>
         private void DrawPolylinePointHandles(DrawingContext context, ViewTransform v, LevelObject obj)
         {
-            string? path = obj.GetAttr("path");
-            if (string.IsNullOrWhiteSpace(path) || MoverPath.IsCircularPath(path))
+            if (!IsEditablePolyline(obj))
             {
                 return;
             }
 
+            string path = obj.GetAttr("path")!;
             Vec2[] points = MoverPath.CanonicalPoints(new Vec2(obj.X, obj.Y), path);
             if (points.Length < 2)
             {

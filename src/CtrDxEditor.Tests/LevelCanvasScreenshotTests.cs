@@ -142,6 +142,26 @@ namespace CtrDxEditor.Tests
             Assert.Equal(expected, key);
         }
 
+        /// <summary>Magic-hat canvas keys combine the current Christmas event with the authored group.</summary>
+        [Theory]
+        [InlineData("0", false, "sock")]
+        [InlineData("2", false, "sock_grouped")]
+        [InlineData("0", true, "sock_xmas")]
+        [InlineData("2", true, "sock_xmas_grouped")]
+        public void CanvasSpriteKeyUsesSockSeasonAndGroup(string group, bool isXmas, string expected)
+        {
+            MethodInfo? method = SceneRenderer.GetMethod(
+                "CanvasSpriteKey",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                [typeof(LevelObject), typeof(bool), typeof(bool)]);
+            Assert.NotNull(method);
+            LevelObject sock = new(new XElement("sock", new XAttribute("group", group)));
+
+            string key = (string)method.Invoke(null, [sock, false, isXmas])!;
+
+            Assert.Equal(expected, key);
+        }
+
         /// <summary>Night star selection keeps the normal star marquee instead of the smaller night atlas canvas.</summary>
         [Fact]
         public void NightStarSelectionBoundsUseNormalStarBounds()
@@ -203,6 +223,29 @@ namespace CtrDxEditor.Tests
             Assert.Equal(81.5, points[0].Y, 3);
             Assert.Equal(120.625, points[1].X, 3);
             Assert.Equal(318.167, points[1].Y, 3);
+        }
+
+        /// <summary>
+        /// The magic hat's selection marquee sits below the object anchor, matching the game, which draws the
+        /// hat sprite offset from its (collision) anchor. A naive center-anchored hat would sit above it.
+        /// </summary>
+        [Fact]
+        public void SockSelectionBoundsSitBelowAnchorByGameOffset()
+        {
+            SpriteCache sprites = SeedHatAtlases();
+            LevelObject sock = new(new XElement("sock", new XAttribute("x", "0"), new XAttribute("y", "0")));
+            MethodInfo? method = SceneRenderer.GetMethod(
+                "SelectionBounds",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(method);
+
+            LevelBounds bounds = (LevelBounds)method.Invoke(null, [sprites, sock, 0, 0, false])!;
+
+            // The visible sprite center should be the game's downward offset applied to the same frame.
+            double offsetY = SockSprite.DrawOffsetY(431, 0.7);
+            LevelBounds dest = SpritePlacement.Compute(Frame("frame_0000.png", 296, 337, 52, 5, 431, 431), 0, offsetY, 0.7).Dest;
+            Assert.Equal(dest.Y + (dest.H / 2.0), bounds.Y + (bounds.H / 2.0), precision: 6);
+            Assert.True(bounds.Y + (bounds.H / 2.0) > 0, "hat marquee should sit below the anchor");
         }
 
         /// <summary>Spin arrows use the rotateSpeed sign: positive sweeps clockwise, negative counter-clockwise.</summary>
@@ -391,6 +434,25 @@ namespace CtrDxEditor.Tests
                     .. EmptyFrames(11),
                     Frame("obj_spikes_04_frame_0000.png", 568, 95, 132, 75, 833, 250),
                 ]),
+            });
+            return cache;
+        }
+
+        private static SpriteCache SeedHatAtlases()
+        {
+            SpriteCache cache = new(new FakeStore());
+            Bitmap bitmap = (Bitmap)RuntimeHelpers.GetUninitializedObject(typeof(Bitmap));
+            SetPrivateField(cache, "_bitmaps", new Dictionary<string, Bitmap>
+            {
+                ["images/obj_hat.png"] = bitmap,
+                ["images/obj_sock_xmas.png"] = bitmap,
+            });
+            // Both seasonal atlases share the hat's 431x431 source frame so the test is season-independent.
+            AtlasFrame hat = Frame("frame_0000.png", 296, 337, 52, 5, 431, 431);
+            SetPrivateField(cache, "_atlases", new Dictionary<string, Atlas>
+            {
+                ["images/obj_hat.json"] = new Atlas([hat]),
+                ["images/obj_sock_xmas.json"] = new Atlas([hat]),
             });
             return cache;
         }

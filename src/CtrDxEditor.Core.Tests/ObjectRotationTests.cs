@@ -163,5 +163,34 @@ namespace CtrDxEditor.Core.Tests
             Assert.Null(RotationTable.For("grab"));
             Assert.False(RotationTable.IsRotatable("star"));
         }
+
+        /// <summary>DX reads the sock angle through ParseMover, then adds the atlas's 90-degree turn.</summary>
+        [Fact]
+        public void SockRotationIsEditableWithNinetyDegreeDisplayOffset()
+        {
+            RotationSpec spec = RotationTable.For("sock")!;
+            LevelObject sock = new(XElement.Parse("""<sock angle="270" />"""));
+
+            Assert.Equal(90, spec.DisplayOffset);
+            Assert.True(spec.Editable);
+            Assert.True(RotationTable.IsRotatable("sock"));
+            Assert.Same(spec, RotationTable.EditableFor("sock"));
+            Assert.Equal(360, ObjectRotation.DisplayDegrees(sock, spec));
+        }
+
+        /// <summary>Seasonal/group visual keys keep the fixed turn for thumbnails without becoming XML objects.</summary>
+        [Theory]
+        [InlineData("sock_grouped")]
+        [InlineData("sock_xmas")]
+        [InlineData("sock_xmas_grouped")]
+        public void SockVariantVisualKeysHaveFixedNonEditableRotation(string key)
+        {
+            RotationSpec spec = RotationTable.For(key)!;
+
+            Assert.Equal(90, spec.DisplayOffset);
+            Assert.False(spec.Editable);
+            Assert.False(RotationTable.IsRotatable(key));
+            Assert.Null(RotationTable.EditableFor(key));
+        }
     }
 }
