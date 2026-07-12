@@ -30,8 +30,8 @@ namespace CtrDxEditor.Core.Descriptors
 
             // Candy
             new ObjectDescriptor("candy", "Candy", [], MaxCount: int.MaxValue),
-            new ObjectDescriptor("candyL", "Candy (Left)", [], MaxCount: 1),
-            new ObjectDescriptor("candyR", "Candy (Right)", [], MaxCount: 1),
+            new ObjectDescriptor("candyL", "Candy (left)", [], MaxCount: 1),
+            new ObjectDescriptor("candyR", "Candy (right)", [], MaxCount: 1),
 
             // Star
             new ObjectDescriptor("star", "Star",
@@ -87,13 +87,13 @@ namespace CtrDxEditor.Core.Descriptors
             ], MaxCount: int.MaxValue, LocalizationName: "spike"),
 
             // Air cushion
-            new ObjectDescriptor("pump", "Pump",
+            new ObjectDescriptor("pump", "Air cushion",
             [
                 new AttributeSpec("angle", AttrType.Number, "0"),
             ], MaxCount: int.MaxValue),
 
             // Electric spark
-            new ObjectDescriptor("electro", "Electro",
+            new ObjectDescriptor("electro", "Electric spark",
             [
                 new AttributeSpec("initialDelay", AttrType.Number, "0.0"),
                 new AttributeSpec("offTime", AttrType.Number, "2.0"),
@@ -102,7 +102,7 @@ namespace CtrDxEditor.Core.Descriptors
             ], MaxCount: int.MaxValue),
 
             // Magic hat teleporter (Christmas sock during the seasonal event)
-            new ObjectDescriptor("sock", "Magic Hat",
+            new ObjectDescriptor("sock", "Magic hat",
             [
                 new AttributeSpec(
                     "group",
@@ -125,7 +125,7 @@ namespace CtrDxEditor.Core.Descriptors
             ], MaxCount: int.MaxValue, LocalizationName: "bouncer"),
 
             // Gravity button
-            new ObjectDescriptor("gravitySwitch", "Gravity Switch", [], MaxCount: int.MaxValue),
+            new ObjectDescriptor("gravitySwitch", "Gravity switch", [], MaxCount: int.MaxValue),
 
             // Vinyl (rotating disc / DJ disc). Game element rotatedCircle; size is the disc radius,
             // handleAngle rotates the 1-2 handles, oneHandle hides the left handle.
@@ -146,24 +146,22 @@ namespace CtrDxEditor.Core.Descriptors
                 new AttributeSpec("angle", AttrType.Number, "0"),
             ], MaxCount: int.MaxValue),
 
-            // Steam Pipe
-            new ObjectDescriptor("steamTube", "Steam Pipe",
+            // Steam pipe
+            new ObjectDescriptor("steamTube", "Steam pipe",
             [
                 new AttributeSpec("angle", AttrType.Number, "0"),
             ], MaxCount: int.MaxValue),
 
-            // Light bulb
-            new ObjectDescriptor("lightBulb", "Light Bulb",
-            [
-                new AttributeSpec("litRadius", AttrType.Whole, "50"),
-            ], MaxCount: int.MaxValue),
-
-            // Lantern: captures the single (primary) candy and holds it in a lit state. candyCaptured
-            // starts the level with the candy already inside the lantern (game LoadLanterns.cs). Mover
-            // attributes (path/moveSpeed/rotateSpeed) are edited through the shared movement controls.
+             // Lantern
             new ObjectDescriptor("lantern", "Lantern",
             [
                 new AttributeSpec("candyCaptured", AttrType.Bool, "false"),
+            ], MaxCount: int.MaxValue),
+
+            // Light bulb
+            new ObjectDescriptor("lightBulb", "Light bulb",
+            [
+                new AttributeSpec("litRadius", AttrType.Whole, "50"),
             ], MaxCount: int.MaxValue),
         ]);
     }
