@@ -9,7 +9,9 @@ namespace CtrDxEditor.Core.Document
 {
     /// <summary>
     /// Owns the parsed level XML tree. Unknown layers, elements, and attributes are retained
-    /// verbatim on the underlying XDocument so a no-edit save round-trips losslessly.
+    /// verbatim on the underlying XDocument so a no-edit save round-trips losslessly. Load-time
+    /// fixups (binding-key and spike/bouncer size normalization) are applied by LevelObjectPolicy
+    /// during editor load, not here, so a bare Parse stays lossless.
     /// </summary>
     public sealed class LevelDocument
     {
