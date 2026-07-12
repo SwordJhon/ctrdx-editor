@@ -399,6 +399,106 @@ namespace CtrDxEditor.Tests
             Assert.True(pen.Thickness > 1.5);
         }
 
+        /// <summary>Steam force ticks cross the shaft at the game's low, medium, and maximum levels.</summary>
+        [Fact]
+        public void SteamForceLevelMarksUseExactRotatedEndpoints()
+        {
+            MethodInfo? method = SceneRenderer.GetMethod(
+                "ComputeForceLevelMarkPoints",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(method);
+
+            Point[] up = (Point[])method.Invoke(null,
+                [ViewTransform.Identity, new Vec2(100, 200), -Math.PI / 2, new double[] { 32.9, 94, 141 }, 10.0])!;
+            Assert.Equal(6, up.Length);
+            Assert.Equal(new Point(95, 167.1), up[0]);
+            Assert.Equal(new Point(105, 167.1), up[1]);
+            Assert.Equal(new Point(95, 106), up[2]);
+            Assert.Equal(new Point(105, 106), up[3]);
+            Assert.Equal(95, up[4].X, 6);
+            Assert.Equal(59, up[4].Y, 6);
+            Assert.Equal(105, up[5].X, 6);
+            Assert.Equal(59, up[5].Y, 6);
+
+            Point[] right = (Point[])method.Invoke(null,
+                [ViewTransform.Identity, new Vec2(100, 200), 0.0, new double[] { 141 }, 10.0])!;
+            Assert.Equal(new Point(241, 195), right[0]);
+            Assert.Equal(new Point(241, 205), right[1]);
+        }
+
+        /// <summary>Steam's body is behind Ghost, which is behind the grab pass, matching GameScene.Draw.</summary>
+        [Fact]
+        public void SteamTubeDrawLayerMatchesGameOrder()
+        {
+            MethodInfo method = SceneRenderer.GetMethod(
+                "GameDrawLayer",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+            static LevelObject Obj(string type)
+            {
+                return new LevelObject(new XElement(type));
+            }
+
+            int steam = (int)method.Invoke(null, [Obj("steamTube")])!;
+            int ghost = (int)method.Invoke(null, [Obj("ghost")])!;
+            int grab = (int)method.Invoke(null, [Obj("grab")])!;
+
+            Assert.True(steam < ghost);
+            Assert.True(ghost < grab);
+        }
+
+        /// <summary>Tube art and valve follow SteamTube's exact local offsets and parent rotation.</summary>
+        [Fact]
+        public void SteamTubePartCentersMatchGameTransform()
+        {
+            MethodInfo? method = SceneRenderer.GetMethod(
+                "ComputeSteamTubePartCenters",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(method);
+
+            Vec2[] upright = (Vec2[])method.Invoke(null, [new Vec2(100, 200), 0.0])!;
+            Assert.Equal(2, upright.Length);
+            Assert.Equal(100, upright[0].X, 6);
+            Assert.Equal(200 + 28, upright[0].Y, 6);
+            Assert.Equal(new Vec2(100, 227), upright[1]);
+
+            Vec2[] right = (Vec2[])method.Invoke(null, [new Vec2(100, 200), 90.0])!;
+            Assert.Equal(100 - 28, right[0].X, 6);
+            Assert.Equal(200, right[0].Y, 6);
+            Assert.Equal(73, right[1].X, 6);
+            Assert.Equal(200, right[1].Y, 6);
+        }
+
+        /// <summary>Every frozen puff's local plume position rotates with the SteamTube parent.</summary>
+        [Fact]
+        public void SteamPuffCentersRotateWithPipe()
+        {
+            MethodInfo? method = SceneRenderer.GetMethod(
+                "ComputeSteamPuffCenter",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(method);
+            SteamPuffSpec puff = SteamTubeGeometry.MaximumPlume()[0];
+
+            Vec2 upright = (Vec2)method.Invoke(null, [new Vec2(100, 200), 0.0, puff])!;
+            Vec2 right = (Vec2)method.Invoke(null, [new Vec2(100, 200), 90.0, puff])!;
+
+            Assert.Equal(100 + puff.LocalX, upright.X, 6);
+            Assert.Equal(200 + puff.LocalY, upright.Y, 6);
+            Assert.Equal(100 - puff.LocalY, right.X, 6);
+            Assert.Equal(200 + puff.LocalX, right.Y, 6);
+        }
+
+        /// <summary>The static plume is faded to reduce canvas clutter without fading pipe hardware.</summary>
+        [Fact]
+        public void SteamPuffOpacityIsFiftyFivePercent()
+        {
+            FieldInfo? field = SceneRenderer.GetField(
+                "SteamPuffOpacity",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(field);
+            Assert.Equal(0.55, (double)field.GetRawConstantValue()!, 6);
+        }
+
         private static SpriteCache SeedStarAtlases()
         {
             SpriteCache cache = new(new FakeStore());

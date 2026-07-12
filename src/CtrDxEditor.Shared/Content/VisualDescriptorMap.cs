@@ -26,6 +26,8 @@ namespace CtrDxEditor.Content
         private const string BouncerImageBase = "images/obj_bouncer";
         private const string GhostJson = "images/obj_ghost.json";
         private const string GhostImageBase = "images/obj_ghost";
+        private const string PipeJson = "images/obj_pipe.json";
+        private const string PipeImageBase = "images/obj_pipe";
         private const string SpikesJson = "images/obj_spikes.json";
         private const string SpikesImageBase = "images/obj_spikes";
         private const string ElectrodesJson = "images/obj_electrodes.json";
@@ -239,6 +241,18 @@ namespace CtrDxEditor.Content
                 new SpriteLayer(GhostJson, GhostImageBase, 1),
             ]),
 
+            // Steam Pipe palette sprite: body and valve only. The renderer applies the valve's game offset;
+            // the separate fixed puff is canvas-only so thumbnails never include steam.
+            new("steamTube",
+            [
+                new SpriteLayer(PipeJson, PipeImageBase, 0),
+                new SpriteLayer(PipeJson, PipeImageBase, 1),
+            ]),
+
+            // All three 11-frame puff loops (2-12, 13-23, 24-34). The canvas freezes a steady-state
+            // 20-puff maximum plume by indexing these layers; none are part of the palette thumbnail.
+            new("steamTube_puffs", PipePuffLayers()),
+
             // Magic hat teleporter. LoadSock uses quad 0 for group 0 and quad 1 otherwise,
             // swaps to the Christmas sock atlas during the seasonal event, and scales it to 0.7.
             new("sock", [new SpriteLayer(HatJson, HatImageBase, 0)], Scale: 0.7),
@@ -296,6 +310,11 @@ namespace CtrDxEditor.Content
             // matching the game's vinilActiveController. Not placeable.
             new("vinyl_active_controller", [new SpriteLayer(VinylJson, VinylImageBase, 4)]),
         ];
+
+        private static IReadOnlyList<SpriteLayer> PipePuffLayers()
+        {
+            return [.. Enumerable.Range(2, 33).Select(quad => new SpriteLayer(PipeJson, PipeImageBase, quad))];
+        }
 
         /// <summary>All visual descriptors keyed by object element name.</summary>
         public static IReadOnlyDictionary<string, VisualDescriptor> ByElement { get; } =
