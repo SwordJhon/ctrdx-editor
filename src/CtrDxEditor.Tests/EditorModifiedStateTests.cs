@@ -1,5 +1,3 @@
-using System.Linq;
-
 using CtrDxEditor.Content;
 using CtrDxEditor.Core.Document;
 using CtrDxEditor.ViewModels;
@@ -11,7 +9,9 @@ namespace CtrDxEditor.Tests
     /// <summary>Tests the unsaved-changes signal that gates the new/open/close discard prompts.</summary>
     public class EditorModifiedStateTests
     {
-        private static string SpikeLevel(string element, string size) => $"""
+        private static string SpikeLevel(string element, string size)
+        {
+            return $"""
         <?xml version='1.0' encoding='utf-8'?>
         <map>
             <layer name="settings">
@@ -22,6 +22,7 @@ namespace CtrDxEditor.Tests
             </layer>
         </map>
         """;
+        }
 
         /// <summary>A level whose spike tag disagrees with its size attribute loads normalized and pending save.</summary>
         [Fact]
@@ -31,7 +32,7 @@ namespace CtrDxEditor.Tests
 
             vm.LoadLevelXml(SpikeLevel("spike2", "3"));
 
-            Assert.Equal("spike3", vm.Document!.Objects.First().Type);
+            Assert.Equal("spike3", vm.Document!.Objects[0].Type);
             Assert.True(vm.IsModified);
         }
 
@@ -46,7 +47,9 @@ namespace CtrDxEditor.Tests
             Assert.False(vm.IsModified);
         }
 
-        private static string CandyLevel(string x, string y) => $"""
+        private static string CandyLevel(string x, string y)
+        {
+            return $"""
         <?xml version='1.0' encoding='utf-8'?>
         <map>
             <layer name="settings">
@@ -57,6 +60,7 @@ namespace CtrDxEditor.Tests
             </layer>
         </map>
         """;
+        }
 
         /// <summary>A level authored with decimal coordinates loads truncated and pending save.</summary>
         [Fact]
@@ -66,7 +70,8 @@ namespace CtrDxEditor.Tests
 
             vm.LoadLevelXml(CandyLevel("100.9", "-40.5"));
 
-            LevelObject candy = vm.Document!.Objects.First();
+            LevelDocument document = Assert.IsType<LevelDocument>(vm.Document);
+            LevelObject candy = document.Objects[0];
             Assert.Equal("100", candy.GetAttr("x"));
             Assert.Equal("-40", candy.GetAttr("y"));
             Assert.True(vm.IsModified);

@@ -104,6 +104,33 @@ namespace CtrDxEditor.Content
             return bitmap is null || frame is null ? null : new SpriteLayerDraw(bitmap, frame);
         }
 
+        /// <summary>
+        /// The skinned inner-candy layer shown inside an active lantern, or null when its atlas isn't
+        /// loaded. Skins 0–2 come from the preloaded obj_lantern atlas; skins 3+ load their candy atlas on
+        /// demand (shared with the candy skin cache). Follows the active <paramref name="skin"/>.
+        /// </summary>
+        /// <param name="skin">Active candy skin index.</param>
+        /// <returns>The resolved inner-candy layer, or <see langword="null"/> when its content is unavailable.</returns>
+        public SpriteLayerDraw? GetLanternInnerCandy(int skin)
+        {
+            LanternInnerCandyFrame f = LanternInnerCandy.Resolve(skin);
+            Bitmap? bitmap;
+            Atlas? atlas;
+            if (f.AtlasImageBase == "images/obj_lantern")
+            {
+                bitmap = LoadBitmap(f.AtlasImageBase + imageExtension);
+                atlas = LoadAtlas(f.AtlasJsonPath);
+            }
+            else
+            {
+                bitmap = _candyBitmaps.GetOrAdd(skin, LoadCandyBitmap);
+                atlas = _candyAtlases.GetOrAdd(skin, LoadCandyAtlas);
+            }
+
+            AtlasFrame? frame = atlas?.At(f.Quad);
+            return bitmap is not null && frame is not null ? new SpriteLayerDraw(bitmap, frame) : null;
+        }
+
         /// <summary>Creates a sprite cache for a desktop content folder.</summary>
         public SpriteCache(string contentRoot)
             : this(new FolderContentStore(contentRoot))
