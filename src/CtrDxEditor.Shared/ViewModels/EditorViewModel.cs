@@ -49,12 +49,19 @@ namespace CtrDxEditor.ViewModels
         [ObservableProperty] public partial LevelObject? AnimationPreviewObject { get; set; }
         [ObservableProperty] public partial double AnimationPreviewElapsedSeconds { get; set; }
         [ObservableProperty] public partial int ObjectListVersion { get; set; }
+        [ObservableProperty] public partial string PaletteSearchText { get; set; } = "";
 
         /// <summary>Sprite cache for the active content.</summary>
         public SpriteCache Sprites { get; } = sprites;
 
         /// <summary>Palette items available for placement.</summary>
         public ObservableCollection<PaletteItemViewModel> Palette { get; } = [];
+
+        /// <summary>Display name of the game whose objects fill the palette.</summary>
+        public string CurrentGameName { get; } = "Cut the Rope";
+
+        /// <summary>Palette items after applying <see cref="PaletteSearchText"/>.</summary>
+        public ObservableCollection<PaletteItemViewModel> PaletteView { get; } = [];
 
         /// <summary>Attribute fields for the selected object.</summary>
         public ObservableCollection<AttributeFieldViewModel> Fields { get; } = [];
@@ -73,6 +80,12 @@ namespace CtrDxEditor.ViewModels
 
         /// <summary>True when a level is open and editor-only commands can run.</summary>
         public bool HasDocument => Document is not null;
+
+        /// <summary>
+        /// True when the palette's game-name header should show: a level is open and no
+        /// search is active (the header is hidden while searching to reduce clutter).
+        /// </summary>
+        public bool ShowGameName => HasDocument && string.IsNullOrWhiteSpace(PaletteSearchText);
 
         /// <summary>Whether the selected object has real polyline movement with direct-edit handles.</summary>
         public bool CanEditPolyline => SelectedObject is { } obj
@@ -115,6 +128,7 @@ namespace CtrDxEditor.ViewModels
             LockedObject = null;
             ClearHistory();
             Palette.Clear();
+            RebuildPaletteView();
             ObjectList.Clear();
             Fields.Clear();
         }
@@ -296,6 +310,32 @@ namespace CtrDxEditor.ViewModels
                     d.ElementName, Localizer.ObjectName(d.ElementName), enabled,
                     Sprites.GetThumbnail(PaletteSpriteKey(d.ElementName), ActiveCandySkin, ActiveOmNomSupport)));
             }
+            RebuildPaletteView();
+        }
+
+        partial void OnPaletteSearchTextChanged(string value)
+        {
+            RebuildPaletteView();
+            OnPropertyChanged(nameof(ShowGameName));
+        }
+
+        /// <summary>
+        /// Repopulates <see cref="PaletteView"/> from <see cref="Palette"/> and the search text,
+        /// matching against both the display name and the raw XML element name.
+        /// </summary>
+        public void RebuildPaletteView()
+        {
+            PaletteView.Clear();
+            string needle = PaletteSearchText?.Trim() ?? "";
+            foreach (PaletteItemViewModel item in Palette)
+            {
+                if (needle.Length == 0
+                    || item.DisplayName.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                    || item.Element.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                {
+                    PaletteView.Add(item);
+                }
+            }
         }
 
         private static string PaletteSpriteKey(string element)
@@ -423,6 +463,7 @@ namespace CtrDxEditor.ViewModels
         partial void OnDocumentChanged(LevelDocument? value)
         {
             OnPropertyChanged(nameof(HasDocument));
+            OnPropertyChanged(nameof(ShowGameName));
         }
 
         partial void OnAnimationPreviewModeChanged(AnimationPreviewMode value)
