@@ -311,5 +311,31 @@ namespace CtrDxEditor.Tests
             Assert.Contains("images/obj_pipe.png", VisualDescriptorMap.RequiredFiles(".png"));
             Assert.Contains("images/obj_pipe.json", VisualDescriptorMap.RequiredFiles(".png"));
         }
+
+        /// <summary>
+        /// The mouse (gap) draws the static hole (obj_mouse quad 0, Mouse.HoleQuad) behind the idle
+        /// body (quad 4, Mouse.IdleQuad) and its eyes (quad 5, Mouse.EyesStartQuad open frame). The
+        /// renderer keeps the hole upright and rotates the body and eyes together by the angle.
+        /// </summary>
+        [Fact]
+        public void GapHasHoleBodyAndEyesLayers()
+        {
+            VisualDescriptor gap = VisualDescriptorMap.For("gap")!;
+
+            Assert.Equal([0, 14], gap.Layers.Select(l => l.Quad));
+            Assert.All(gap.Layers, l =>
+            {
+                Assert.Equal("images/obj_mouse.json", l.AtlasJsonRelPath);
+                Assert.Equal("images/obj_mouse", l.AtlasImageBasePath);
+            });
+        }
+
+        /// <summary>The mouse atlas is part of the required content bundle.</summary>
+        [Fact]
+        public void MouseAtlasIsRequired()
+        {
+            Assert.Contains("images/obj_mouse.png", VisualDescriptorMap.RequiredFiles(".png"));
+            Assert.Contains("images/obj_mouse.json", VisualDescriptorMap.RequiredFiles(".png"));
+        }
     }
 }

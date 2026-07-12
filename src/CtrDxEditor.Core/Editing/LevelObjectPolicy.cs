@@ -46,6 +46,19 @@ namespace CtrDxEditor.Core.Editing
                 obj.SetAttr("group", SockGrouping.NextGroup(
                     document.Objects.Where(o => o.Type == "sock").Select(o => o.GetAttr("group"))));
             }
+
+            // Mice activate in ascending index order; a new mouse takes one past the highest existing
+            // index (max+1, not count+1, so it stays unique after a mouse is deleted). The game itself
+            // falls back to mice.Count+1 only when index is absent, so an explicit value never collides.
+            if (obj.Type == "gap")
+            {
+                int max = document.Objects
+                    .Where(o => o.Type == "gap")
+                    .Select(o => int.TryParse(o.GetAttr("index"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int i) ? i : 0)
+                    .DefaultIfEmpty(0)
+                    .Max();
+                obj.SetAttr("index", (max + 1).ToString(CultureInfo.InvariantCulture));
+            }
         }
 
         /// <summary>
@@ -63,6 +76,26 @@ namespace CtrDxEditor.Core.Editing
                 SpikeObject.NormalizeElementName(obj);
                 BouncerObject.NormalizeElementName(obj);
                 changed |= obj.Type != before;
+            }
+
+            return changed;
+        }
+
+        /// <summary>
+        /// Renames the legacy <c>mouse</c> tag to <c>gap</c>. The game dispatches both tags to the
+        /// same LoadMouse loader (GameScene.LoadObjects), so this is behavior-preserving and lets the
+        /// editor treat the mouse as a single registered object. Returns whether any tag was renamed.
+        /// </summary>
+        public static bool NormalizeMouseAlias(LevelDocument document)
+        {
+            bool changed = false;
+            foreach (LevelObject obj in document.Objects)
+            {
+                if (obj.Type == "mouse")
+                {
+                    obj.Element.Name = "gap";
+                    changed = true;
+                }
             }
 
             return changed;
@@ -154,6 +187,13 @@ namespace CtrDxEditor.Core.Editing
 
             // Electro requires size="5" in XML for the game, but it is not user-editable.
             if (element == "electro" && attribute == "size")
+            {
+                return false;
+            }
+
+            // The mouse's activation index is auto-numbered on placement and shown as an on-canvas
+            // label, so it is not exposed as an editable field.
+            if (element == "gap" && attribute == "index")
             {
                 return false;
             }
