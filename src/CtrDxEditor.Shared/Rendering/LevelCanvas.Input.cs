@@ -90,6 +90,35 @@ namespace CtrDxEditor.Rendering
                     : SpikeResize.Handle.None;
         }
 
+        /// <summary>What part of the selected conveyor a level point is over, or <see cref="ConveyorGeometry.Handle.None"/>.</summary>
+        /// <param name="levelPt">The point to test, in level coordinates.</param>
+        /// <returns>The conveyor handle under the point, or <see cref="ConveyorGeometry.Handle.None"/>.</returns>
+        private ConveyorGeometry.Handle HitConveyor(Vec2 levelPt)
+        {
+            return SelectedObject is { } sel && View.Zoom > 0 && ConveyorGeometry.Of(sel) is { } s
+                ? ConveyorGeometry.HitTest(s, levelPt, endTolerance: 9 / View.Zoom, widthTolerance: 9 / View.Zoom)
+                : ConveyorGeometry.Handle.None;
+        }
+
+        /// <summary>Applies the active conveyor drag: far-end rewrites length+angle, width rewrites thickness.</summary>
+        /// <param name="belt">The conveyor object being edited.</param>
+        /// <param name="levelPt">The pointer position in level coordinates.</param>
+        private void ApplyConveyorDrag(LevelObject belt, Vec2 levelPt)
+        {
+            switch (_conveyorDrag)
+            {
+                case ConveyorGeometry.Handle.FarEnd:
+                    ConveyorGeometry.ApplyFarEndDrag(belt, levelPt);
+                    break;
+                case ConveyorGeometry.Handle.Width:
+                    ConveyorGeometry.ApplyWidthDrag(belt, levelPt);
+                    break;
+                case ConveyorGeometry.Handle.None:
+                default:
+                    break;
+            }
+        }
+
         /// <summary>Which vinyl handle a level point is over, or <see cref="VinylGeometry.Handle.None"/>.</summary>
         private VinylGeometry.Handle HitVinylHandle(Vec2 levelPt)
         {
@@ -124,7 +153,7 @@ namespace CtrDxEditor.Rendering
             {
                 return ObjectRotation.Handle.None;
             }
-            Vec2 c = new(obj.X, obj.Y);
+            Vec2 c = ObjectRotation.Center(obj, spec);
             double radius = RotationDialRenderer.RadiusPx / View.Zoom;
             return ObjectRotation.HitTest(
                 c, ObjectRotation.StoredAngle(obj, spec), spec, radius, levelPt,
@@ -146,13 +175,22 @@ namespace CtrDxEditor.Rendering
         /// </summary>
         /// <param name="obj">The rotatable object being edited.</param>
         /// <param name="spec">Rotation spec describing the object's angle attribute and snap step.</param>
+        /// <param name="center">Stable pivot captured when the dial gesture began.</param>
         /// <param name="levelPt">The pointer position in level coordinates.</param>
         /// <param name="mods">Active keyboard modifiers; Alt enables snapping.</param>
-        private static void ApplyRotation(LevelObject obj, RotationSpec spec, Vec2 levelPt, KeyModifiers mods)
+        private static void ApplyRotation(
+            LevelObject obj, RotationSpec spec, Vec2 center, Vec2 levelPt, KeyModifiers mods)
         {
             bool snap = mods.HasFlag(KeyModifiers.Alt);
-            double angle = ObjectRotation.AngleFromPoint(new Vec2(obj.X, obj.Y), levelPt, spec, snap);
-            obj.SetAttr(spec.AttributeName, ObjectRotation.Format(angle));
+            double angle = ObjectRotation.AngleFromPoint(center, levelPt, spec, snap);
+            if (spec.CenterKind == RotationCenterKind.ConveyorMidpoint)
+            {
+                ConveyorGeometry.ApplyRotationAroundCenter(obj, angle, center);
+            }
+            else
+            {
+                obj.SetAttr(spec.AttributeName, ObjectRotation.Format(angle));
+            }
         }
 
         /// <summary>
@@ -568,14 +606,29 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
+            // Grabbing the selected conveyor's far-end resizes length only; the side handle resizes width.
+            // Rotation is handled separately by the generic dial through the conveyor's CCW rotation spec.
+            ConveyorGeometry.Handle conveyorHandle = HitConveyor(levelPt);
+            if (conveyorHandle != ConveyorGeometry.Handle.None && SelectedObject is { } conveyorObj)
+            {
+                BeginDocumentEdit?.Invoke();
+                _conveyorDrag = conveyorHandle;
+                ApplyConveyorDrag(conveyorObj, levelPt);
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                e.Pointer.Capture(this);
+                return;
+            }
+
             // Grabbing the selected object's rotation dial (knob or ring) rotates it; takes priority over
             // object hit-testing so the dial wins over anything beneath it.
             if (HitRotationDial(levelPt) != ObjectRotation.Handle.None
                 && SelectedObject is { } rotObj && EditableRotationSpec(rotObj) is { } rotSpec)
             {
                 BeginDocumentEdit?.Invoke();
+                _rotationDragCenter = ObjectRotation.Center(rotObj, rotSpec);
                 _rotating = true;
-                ApplyRotation(rotObj, rotSpec, levelPt, e.KeyModifiers);
+                ApplyRotation(rotObj, rotSpec, _rotationDragCenter, levelPt, e.KeyModifiers);
                 SelectedObjectMoved?.Invoke();
                 InvalidateVisual();
                 e.Pointer.Capture(this);
@@ -730,9 +783,17 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
+            if (_conveyorDrag != ConveyorGeometry.Handle.None && SelectedObject is { } conveyorDragObj)
+            {
+                ApplyConveyorDrag(conveyorDragObj, levelPt);
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                return;
+            }
+
             if (_rotating && SelectedObject is { } rotObj && EditableRotationSpec(rotObj) is { } rotSpec)
             {
-                ApplyRotation(rotObj, rotSpec, levelPt, e.KeyModifiers);
+                ApplyRotation(rotObj, rotSpec, _rotationDragCenter, levelPt, e.KeyModifiers);
                 SelectedObjectMoved?.Invoke();
                 InvalidateVisual();
                 return;
@@ -771,6 +832,7 @@ namespace CtrDxEditor.Rendering
                 ObjectRotation.Handle dial = HitRotationDial(levelPt);
                 SetDialKnobHovered(dial == ObjectRotation.Handle.Knob);
                 SpikeResize.Handle stripHandle = HitStripResize(levelPt);
+                ConveyorGeometry.Handle conveyorHover = HitConveyor(levelPt);
                 VinylGeometry.Handle vinylHover = HitVinylHandle(levelPt);
                 SetVinylHandleHovered(vinylHover);
                 int oldHoverPoint = _polylineHoverPoint;
@@ -789,6 +851,7 @@ namespace CtrDxEditor.Rendering
                     ? new Cursor(StandardCursorType.Hand)
                     : dial != ObjectRotation.Handle.None ? new Cursor(StandardCursorType.Hand)
                     : stripHandle != SpikeResize.Handle.None ? CursorForStripResize()
+                    : conveyorHover != ConveyorGeometry.Handle.None ? ResizeCursor
                     : OnRadiusEdge(levelPt) ? ResizeCursor : CursorForHandle(handle);
                 return;
             }
@@ -825,6 +888,7 @@ namespace CtrDxEditor.Rendering
             // progress; skip the resets and completion callback unless a gesture is actually active.
             bool gestureActive = _dragging || _panning || _resizingRadius || _polylinePointDrag > 0
                 || _railDrag != GrabRail.Handle.None || _stripResizeDrag != SpikeResize.Handle.None
+                || _conveyorDrag != ConveyorGeometry.Handle.None
                 || _vinylHandleDrag != VinylGeometry.Handle.None || _rotating || _hookHovered;
             if (!gestureActive)
             {
@@ -833,14 +897,17 @@ namespace CtrDxEditor.Rendering
 
             bool editedDocument = _dragging || _resizingRadius || _polylinePointDrag > 0
                 || _railDrag != GrabRail.Handle.None || _stripResizeDrag != SpikeResize.Handle.None
+                || _conveyorDrag != ConveyorGeometry.Handle.None
                 || _vinylHandleDrag != VinylGeometry.Handle.None || _rotating;
             _dragging = false;
             _panning = false;
             _resizingRadius = false;
             _railDrag = GrabRail.Handle.None;
             _stripResizeDrag = SpikeResize.Handle.None;
+            _conveyorDrag = ConveyorGeometry.Handle.None;
             _vinylHandleDrag = VinylGeometry.Handle.None;
             _rotating = false;
+            _rotationDragCenter = default;
             _polylinePointDrag = -1;
             if (editedDocument)
             {

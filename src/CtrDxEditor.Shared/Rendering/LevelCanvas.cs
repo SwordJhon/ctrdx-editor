@@ -213,6 +213,9 @@ namespace CtrDxEditor.Rendering
         /// <summary>True while dragging the selected object's rotation dial.</summary>
         private bool _rotating;
 
+        /// <summary>Stable level-space pivot captured when a rotation-dial gesture begins.</summary>
+        private Vec2 _rotationDragCenter;
+
         /// <summary>True while dragging a grab's auto-catch radius ring to resize it.</summary>
         private bool _resizingRadius;
 
@@ -234,6 +237,10 @@ namespace CtrDxEditor.Rendering
 
         /// <summary>Which selected spike end is being dragged to choose a new spike size.</summary>
         private SpikeResize.Handle _stripResizeDrag;
+
+        /// <summary>Which selected conveyor handle the current drag is manipulating (far end or width),
+        /// or <see cref="ConveyorGeometry.Handle.None"/> when no conveyor drag is in progress.</summary>
+        private ConveyorGeometry.Handle _conveyorDrag;
 
         /// <summary>Which vinyl disc handle the current drag is rotating, or <see cref="VinylGeometry.Handle.None"/>.</summary>
         private VinylGeometry.Handle _vinylHandleDrag;

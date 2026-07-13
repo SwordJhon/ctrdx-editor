@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
 
+using CtrDxEditor.Core.Editing;
+
 namespace CtrDxEditor.Core.Descriptors
 {
     /// <summary>Lookup table of editable object descriptors keyed by XML element name.</summary>
@@ -23,7 +25,7 @@ namespace CtrDxEditor.Core.Descriptors
         }
 
         /// <summary>Built-in descriptor set for the currently supported editor objects.</summary>
-        public static DescriptorTable Default { get; } = new(
+        public static DescriptorTable CtrObjects { get; } = new(
         [
             // Om Nom
             new ObjectDescriptor("target", "Om Nom", [], MaxCount: int.MaxValue),
@@ -171,6 +173,17 @@ namespace CtrDxEditor.Core.Descriptors
             new ObjectDescriptor("lightBulb", "Light bulb",
             [
                 new AttributeSpec("litRadius", AttrType.Whole, "50"),
+            ], MaxCount: int.MaxValue),
+
+            // Conveyor belt
+            new ObjectDescriptor("transporter", "Conveyor",
+            [
+                new AttributeSpec("velocity", AttrType.Number, ConveyorObject.DefaultVelocity),
+                new AttributeSpec("direction", AttrType.Enum, ConveyorObject.DefaultDirection, EnumValues: ["forward", "backward"]),
+                new AttributeSpec("length", AttrType.Number, ConveyorObject.DefaultLength),
+                new AttributeSpec("width", AttrType.Number, ConveyorObject.DefaultWidth),
+                new AttributeSpec("angle", AttrType.Number, ConveyorObject.DefaultAngle),
+                new AttributeSpec("type", AttrType.Enum, ConveyorObject.DefaultType, EnumValues: ["manual"]),
             ], MaxCount: int.MaxValue),
         ]);
     }

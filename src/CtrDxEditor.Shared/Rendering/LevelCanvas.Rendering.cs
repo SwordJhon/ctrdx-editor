@@ -202,6 +202,11 @@ namespace CtrDxEditor.Rendering
                 }
                 DrawPolylinePointHandles(context, v, selected);
 
+                if (selected.Type == "transporter")
+                {
+                    ConveyorRenderer.DrawHandles(context, v, selected, _palette.OrbitPathArrow);
+                }
+
                 if (selected.Type == "ghost")
                 {
                     DrawGhostBadge(context, v, selected, points);
@@ -235,6 +240,17 @@ namespace CtrDxEditor.Rendering
                     using (context.PushOpacity(0.7))
                     {
                         LevelSceneRenderer.DrawVinylPreview(context, v, sprites, _dragPreviewLevel);
+                    }
+                }
+                else if (dragPreviewElement == ConveyorObject.Element)
+                {
+                    using (context.PushOpacity(0.7))
+                    {
+                        ConveyorRenderer.Draw(
+                            context,
+                            v,
+                            sprites,
+                            ConveyorObject.CreatePreset(_dragPreviewLevel.X, _dragPreviewLevel.Y));
                     }
                 }
                 else if (sprites.GetSprite(LevelSceneRenderer.CanvasSpriteKey(
