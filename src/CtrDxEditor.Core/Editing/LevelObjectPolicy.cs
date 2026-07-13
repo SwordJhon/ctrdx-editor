@@ -12,6 +12,18 @@ namespace CtrDxEditor.Core.Editing
         /// <summary>Applies defaults that depend on the active level settings.</summary>
         public static void ApplyDefaults(LevelObject obj, LevelDocument document)
         {
+            // Tutorials are authored in English, and the game only displays them when locale matches.
+            if (TutorialObject.IsImage(obj.Type) || TutorialObject.IsText(obj.Type))
+            {
+                TutorialObject.EnsureEnglishLocale(obj);
+            }
+
+            // A freshly placed tutorial text starts in auto-width mode so its box grows with the text.
+            if (TutorialObject.IsText(obj.Type))
+            {
+                TutorialObject.SetAutoWidth(obj, true);
+            }
+
             if (document.TwoParts && obj.Type == "grab" && obj.GetAttr("part") is null)
             {
                 obj.SetAttr("part", "L");

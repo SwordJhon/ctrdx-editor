@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 
 using CtrDxEditor.Content;
@@ -48,8 +49,12 @@ namespace CtrDxEditor.Tests
             vm.PaletteSearchText = needle;
 
             Assert.NotEmpty(vm.PaletteView);
+            Assert.Contains(vm.PaletteView, i =>
+                i.DisplayName.Contains(needle, StringComparison.OrdinalIgnoreCase));
             Assert.All(vm.PaletteView, i =>
-                Assert.Contains(needle, i.DisplayName, System.StringComparison.OrdinalIgnoreCase));
+                Assert.True(
+                    i.DisplayName.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                    || i.Element.Contains(needle, StringComparison.OrdinalIgnoreCase)));
         }
 
         /// <summary>Search also matches the raw XML element name, not just the display name.</summary>
@@ -64,7 +69,7 @@ namespace CtrDxEditor.Tests
 
             Assert.Contains(vm.PaletteView, i => i.Element == "bouncer1");
             Assert.All(vm.PaletteView, i =>
-                Assert.Contains("bouncer1", i.Element, System.StringComparison.OrdinalIgnoreCase));
+                Assert.Contains("bouncer1", i.Element, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>A search with no display-name match produces an empty view.</summary>
@@ -88,7 +93,7 @@ namespace CtrDxEditor.Tests
 
             Assert.NotEmpty(vm.PaletteView);
             Assert.All(vm.PaletteView, i =>
-                Assert.Contains(needle, i.DisplayName, System.StringComparison.OrdinalIgnoreCase));
+                Assert.Contains(needle, i.DisplayName, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>The palette reports the game whose object catalog it displays.</summary>

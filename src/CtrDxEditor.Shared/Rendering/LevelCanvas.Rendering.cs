@@ -7,6 +7,7 @@ using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Styling;
 
 using CtrDxEditor.Content;
 using CtrDxEditor.Core.Document;
@@ -200,6 +201,7 @@ namespace CtrDxEditor.Rendering
                 {
                     context.DrawLine(pen, points[i], points[(i + 1) % points.Length]);
                 }
+                DrawTutorialTextResizeHandle(context, v, sprites, selected);
                 DrawPolylinePointHandles(context, v, selected);
 
                 if (selected.Type == "transporter")
@@ -253,6 +255,42 @@ namespace CtrDxEditor.Rendering
                             ConveyorObject.CreatePreset(_dragPreviewLevel.X, _dragPreviewLevel.Y));
                     }
                 }
+                else if (dragPreviewElement == TutorialObject.TextElement)
+                {
+                    // Tutorial text has no sprite; preview the placeholder text at its auto-fit width.
+                    using (context.PushOpacity(0.7))
+                    {
+                        bool previewDark = ActiveBackground == 0 && ActualThemeVariant == ThemeVariant.Dark;
+                        LevelObject previewText = new(new XElement(
+                            TutorialObject.TextElement,
+                            new XAttribute("x", ((int)Math.Round(_dragPreviewLevel.X)).ToString(CultureInfo.InvariantCulture)),
+                            new XAttribute("y", ((int)Math.Round(_dragPreviewLevel.Y)).ToString(CultureInfo.InvariantCulture)),
+                            new XAttribute("text", TutorialObject.DefaultText)));
+                        TutorialObject.SetAutoWidth(previewText, true);
+                        TutorialRenderer.ApplyAutoWidth(sprites, previewText);
+                        TutorialRenderer.DrawText(context, v, sprites, previewText, new Rect(Bounds.Size), previewDark);
+                    }
+                }
+                else if (TutorialObject.IsImage(dragPreviewElement))
+                {
+                    // Tutorial line art needs the same dark-theme inversion as a placed icon.
+                    using (context.PushOpacity(0.7))
+                    {
+                        bool previewDark = ActiveBackground == 0 && ActualThemeVariant == ThemeVariant.Dark;
+                        LevelObject previewIcon = new(new XElement(
+                            dragPreviewElement,
+                            new XAttribute("x", ((int)Math.Round(_dragPreviewLevel.X)).ToString(CultureInfo.InvariantCulture)),
+                            new XAttribute("y", ((int)Math.Round(_dragPreviewLevel.Y)).ToString(CultureInfo.InvariantCulture)),
+                            new XAttribute("angle", "0")));
+                        TutorialRenderer.DrawIcon(
+                            context,
+                            v,
+                            sprites,
+                            previewIcon,
+                            new Rect(Bounds.Size),
+                            previewDark);
+                    }
+                }
                 else if (sprites.GetSprite(LevelSceneRenderer.CanvasSpriteKey(
                     dragPreviewElement == "sock" && SpecialEvents.IsXmas ? "sock_xmas" : dragPreviewElement,
                     doc.NightLevel), ActiveCandySkin, ActiveOmNomSupport) is { } dragPreviewSprite)
@@ -282,6 +320,28 @@ namespace CtrDxEditor.Rendering
             {
                 DrawPolylineLimitHint(context, v, limitObj);
             }
+        }
+
+        /// <summary>Draws the selected tutorial text's wrap-width handle.</summary>
+        private void DrawTutorialTextResizeHandle(
+            DrawingContext context,
+            ViewTransform view,
+            SpriteCache sprites,
+            LevelObject selected)
+        {
+            if (!TutorialObject.IsText(selected.Type))
+            {
+                return;
+            }
+
+            LevelBounds bounds = TutorialRenderer.TextBounds(sprites, selected);
+            Vec2 screen = view.LevelToScreen(TutorialTextResize.HandlePosition(bounds));
+            context.DrawEllipse(
+                Brushes.White,
+                _palette.OrbitPathArrow,
+                new Point(screen.X, screen.Y),
+                5,
+                5);
         }
 
         /// <summary>Draws the selected ghost's enabled-state selector badge and records its hit targets.</summary>
@@ -608,6 +668,7 @@ namespace CtrDxEditor.Rendering
 
             // Draw in the game's fixed z-order (GameScene.Draw), a stable sort so same-layer objects keep list order.
             int ropeSeed = 0;
+            bool tutorialDark = ActiveBackground == 0 && ActualThemeVariant == ThemeVariant.Dark;
             foreach (LevelObject obj in objects.OrderBy(LevelSceneRenderer.GameDrawLayer))
             {
                 if (obj.Type == "grab")
@@ -643,7 +704,9 @@ namespace CtrDxEditor.Rendering
                     LevelSceneRenderer.DrawObject(context, v, sprites, obj, ActiveCandySkin, ActiveOmNomSupport, doc.NightLevel,
                         ActiveBackground > 0 ? Brushes.Black : _palette.StarDurationText,
                         objects,
-                        useAnimationPreview && IsAnimationPreviewing(obj) ? AnimationPreviewElapsedSeconds : null);
+                        useAnimationPreview && IsAnimationPreviewing(obj) ? AnimationPreviewElapsedSeconds : null,
+                        opBounds,
+                        tutorialDark);
                 }
             }
 
