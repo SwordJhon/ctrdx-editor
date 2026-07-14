@@ -46,6 +46,8 @@ namespace CtrDxEditor.Content
         private const string MouseImageBase = "images/obj_mouse";
         private const string ConveyorJson = "images/obj_conveyor.json";
         private const string ConveyorImageBase = "images/obj_conveyor";
+        private const string RocketJson = "images/obj_rocket.json";
+        private const string RocketImageBase = "images/obj_rocket";
         private const string TutorialSignsJson = "images/tutorial_signs.json";
         private const string TutorialSignsImageBase = "images/tutorial_signs";
 
@@ -277,6 +279,16 @@ namespace CtrDxEditor.Content
                 new SpriteLayer(ConveyorJson, ConveyorImageBase, 5),
                 new SpriteLayer(ConveyorJson, ConveyorImageBase, 6),
             ]),
+
+            // Rocket body (obj_rocket quad 10, frame_10_rocket), drawn at the game's 0.7 scale. Palette
+            // thumbnail + the rotated body on canvas.
+            new("rocket", [new SpriteLayer(RocketJson, RocketImageBase, 10)], Scale: 0.7),
+
+            // Rocket launcher base (quad 0, frame_00_launcher). Non-placeable; drawn upright behind the
+            // body only when isRotatable, matching LoadRocket's decalsLayer marker. The game leaves the
+            // marker Image at the default scale 1.0 (only the rocket body is scaled to 0.7), so the base
+            // renders larger than the body.
+            new("rocket_launcher", [new SpriteLayer(RocketJson, RocketImageBase, 0)]),
 
             // Tutorial icons map tutorial01..tutorial11 to tutorial_signs quads 0..10.
             new("tutorial01", [new SpriteLayer(TutorialSignsJson, TutorialSignsImageBase, 0)]),
