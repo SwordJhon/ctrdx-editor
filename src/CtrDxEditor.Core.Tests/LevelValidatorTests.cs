@@ -29,7 +29,7 @@ namespace CtrDxEditor.Core.Tests
         public void ValidTwoPartLevelHasNoWarnings()
         {
             LevelDocument doc = Doc("twoParts=\"true\"",
-                "<candyL x=\"1\" y=\"1\" /><candyR x=\"2\" y=\"2\" /><target x=\"3\" y=\"3\" />");
+                "<candyL x=\"1\" y=\"1\" /><candyR x=\"2\" y=\"2\" /><target x=\"300\" y=\"300\" />");
 
             Assert.Empty(LevelValidator.Validate(doc));
         }
@@ -183,6 +183,46 @@ namespace CtrDxEditor.Core.Tests
                 "<ghost x=\"5\" y=\"5\" grab=\"true\" bubble=\"false\" bouncer=\"false\" />");
 
             Assert.DoesNotContain(LevelValidator.Validate(doc), w => w.Key == "Validation.GhostIdle");
+        }
+
+        /// <summary>A candy starting inside a spike is flagged so the author can move it.</summary>
+        [Fact]
+        public void CandyInsideSpikeWarns()
+        {
+            LevelDocument doc = Doc("",
+                "<candy x=\"0\" y=\"0\" candyNumber=\"1\" /><spike1 x=\"0\" y=\"0\" /><target x=\"3\" y=\"3\" />");
+
+            Assert.Contains(LevelValidator.Validate(doc), w => w.Key == "Validation.CandyInHazard");
+        }
+
+        /// <summary>A candy clear of every hazard produces no hazard warning.</summary>
+        [Fact]
+        public void CandyClearOfHazardsDoesNotWarn()
+        {
+            LevelDocument doc = Doc("",
+                "<candy x=\"0\" y=\"0\" /><spike1 x=\"200\" y=\"200\" /><target x=\"200\" y=\"400\" />");
+
+            Assert.DoesNotContain(LevelValidator.Validate(doc), w => w.Key == "Validation.CandyInHazard");
+        }
+
+        /// <summary>A candy starting on Om Nom's mouth is flagged so the author can move it.</summary>
+        [Fact]
+        public void CandyOnMouthWarns()
+        {
+            LevelDocument doc = Doc("",
+                "<candy x=\"100\" y=\"100\" candyNumber=\"1\" /><target x=\"100\" y=\"100\" />");
+
+            Assert.Contains(LevelValidator.Validate(doc), w => w.Key == "Validation.CandyOnMouth");
+        }
+
+        /// <summary>A candy clear of every Om Nom's mouth produces no mouth warning.</summary>
+        [Fact]
+        public void CandyClearOfMouthDoesNotWarn()
+        {
+            LevelDocument doc = Doc("",
+                "<candy x=\"100\" y=\"100\" /><target x=\"250\" y=\"400\" />");
+
+            Assert.DoesNotContain(LevelValidator.Validate(doc), w => w.Key == "Validation.CandyOnMouth");
         }
     }
 }

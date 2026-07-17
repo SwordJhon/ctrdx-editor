@@ -114,12 +114,35 @@ namespace CtrDxEditor.Core.Editing
                 }
             }
 
+            foreach (LevelObject candy in HazardOverlap.CandiesInHazards(document))
+            {
+                warnings.Add(new LevelWarning("Validation.CandyInHazard", CandyLabel(candy)));
+            }
+
+            foreach (LevelObject candy in MouthOverlap.CandiesOnMouth(document))
+            {
+                warnings.Add(new LevelWarning("Validation.CandyOnMouth", CandyLabel(candy)));
+            }
+
             return warnings;
         }
 
         private static bool IsTrueAttr(LevelObject obj, string name)
         {
             return bool.TryParse(obj.GetAttr(name), out bool b) && b;
+        }
+
+        private static string CandyLabel(LevelObject candy)
+        {
+            string? number = candy.GetAttr("candyNumber");
+            return !string.IsNullOrWhiteSpace(number)
+                ? number.Trim()
+                : candy.Type switch
+                {
+                    "candyL" => "L",
+                    "candyR" => "R",
+                    _ => "?",
+                };
         }
     }
 }
