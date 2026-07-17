@@ -7,9 +7,18 @@ using CtrDxEditor.Core.Geometry;
 namespace CtrDxEditor.Core.Editing
 {
     /// <summary>A center-relative collision rectangle in cuttherope-dx world units.</summary>
+    /// <param name="X">The left edge as an offset from the object's center, not an absolute coordinate; negative places it left of center.</param>
+    /// <param name="Y">The top edge as an offset from the object's center; negative places it above center.</param>
+    /// <param name="W">The width in world units, extending right from <paramref name="X"/>.</param>
+    /// <param name="H">The height in world units, extending down from <paramref name="Y"/>.</param>
     public readonly record struct GameRect(double X, double Y, double W, double H);
 
     /// <summary>One object's desktop and mobile collision rectangles in game world space.</summary>
+    /// <param name="Element">The XML element name this geometry applies to.</param>
+    /// <param name="Desktop">The collision rectangle under the desktop physics model.</param>
+    /// <param name="Phone">The collision rectangle under the mobile/WP7 physics model.</param>
+    /// <param name="DesktopTolerance">Slack added to <paramref name="Desktop"/> on every side, in world units; 0 keeps the box tight.</param>
+    /// <param name="PhoneTolerance">Slack added to <paramref name="Phone"/> on every side, in world units; 0 keeps the box tight.</param>
     public sealed record HitboxDef(
         string Element,
         GameRect Desktop,
@@ -86,6 +95,11 @@ namespace CtrDxEditor.Core.Editing
         /// Computes an object's level-space collision bounds, including state-dependent variants such as
         /// rotatable spike quads.
         /// </summary>
+        /// <param name="obj">The object to bound; its state selects variants such as a toggled spike's quad.</param>
+        /// <param name="scale">Accepted for call-site symmetry with sprite placement but ignored: collision geometry is authored in world space and does not inherit visual scale.</param>
+        /// <param name="model">The physics model, selecting desktop or phone collision geometry.</param>
+        /// <param name="mapScale">Atlas pixels per level unit; defaults to the standard map scale.</param>
+        /// <returns>The collision bounds in level units, or null when the element has no hitbox.</returns>
         public static LevelBounds? Compute(
             LevelObject obj,
             double scale,
@@ -102,6 +116,13 @@ namespace CtrDxEditor.Core.Editing
         /// Computes an element's level-space collision bounds at object center
         /// (<paramref name="x"/>, <paramref name="y"/>), or <see langword="null"/> when unsupported.
         /// </summary>
+        /// <param name="element">The element name, including any state suffix such as <c>_toggled</c>.</param>
+        /// <param name="x">The object's center X in level units.</param>
+        /// <param name="y">The object's center Y in level units.</param>
+        /// <param name="scale">Accepted for call-site symmetry with sprite placement but ignored: collision geometry is authored in world space and does not inherit visual scale.</param>
+        /// <param name="model">The physics model, selecting desktop or phone collision geometry.</param>
+        /// <param name="mapScale">Atlas pixels per level unit; defaults to the standard map scale.</param>
+        /// <returns>The collision bounds in level units, or null when the element has no hitbox.</returns>
         public static LevelBounds? Compute(
             string element,
             double x,
