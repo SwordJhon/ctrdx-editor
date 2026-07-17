@@ -218,6 +218,44 @@
           </CheckBox>
         </StackPanel>
 
+        <StackPanel Spacing="4">
+          <TextBlock Text="{loc:Tr Dialog.LevelSettings.Water}" />
+          <NumericUpDown Minimum="0"
+                         Maximum="10000"
+                         Increment="1"
+                         FormatString="0.##"
+                         Value="{Binding Water, Mode=TwoWay}" />
+
+          <TextBlock Text="{loc:Tr Dialog.LevelSettings.EnterNumber}"
+                     Foreground="{DynamicResource EditorBrush.DangerText}"
+                     FontSize="12"
+                     IsVisible="{Binding Water, Converter={x:Static ObjectConverters.IsNull}}" />
+
+          <TextBlock Text="{loc:Tr Dialog.LevelSettings.WaterDescription}"
+                     TextWrapping="Wrap"
+                     Opacity="0.7" />
+
+          <TextBlock Text="{loc:Tr Dialog.LevelSettings.WaterSpeed}" />
+          <NumericUpDown Minimum="0"
+                         Maximum="10000"
+                         Increment="1"
+                         FormatString="0.##"
+                         Value="{Binding WaterSpeed, Mode=TwoWay}" />
+
+          <TextBlock Text="{loc:Tr Dialog.LevelSettings.EnterNumber}"
+                     Foreground="{DynamicResource EditorBrush.DangerText}"
+                     FontSize="12"
+                     IsVisible="{Binding WaterSpeed, Converter={x:Static ObjectConverters.IsNull}}" />
+
+          <TextBlock Text="{loc:Tr Dialog.LevelSettings.WaterSpeedDescription}"
+                     TextWrapping="Wrap"
+                     Opacity="0.7" />
+          <TextBlock Text="{Binding WaterDrainHint}"
+                     TextWrapping="Wrap"
+                     Opacity="0.7"
+                     IsVisible="{Binding HasWaterDrainHint}" />
+        </StackPanel>
+
         <!-- Editor-decoration pickers, shown in both New and Edit modes. -->
         <StackPanel Spacing="8">
 

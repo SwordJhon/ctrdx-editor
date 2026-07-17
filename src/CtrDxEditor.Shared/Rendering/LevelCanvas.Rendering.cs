@@ -224,6 +224,16 @@ namespace CtrDxEditor.Rendering
                 }
             }
 
+            // The water surface doubles as its own drag handle; it only exists when the level has water,
+            // so a water-free level shows nothing to grab and the settings dialog is the way in.
+            if (WaterGeometry.Band(doc.Width, doc.Height, doc.Water) is { } handleBand
+                && (_waterHandleHovered || _waterDrag))
+            {
+                Vec2 left = v.LevelToScreen(new Vec2(handleBand.X, handleBand.Y));
+                Vec2 right = v.LevelToScreen(new Vec2(handleBand.X + handleBand.W, handleBand.Y));
+                context.DrawLine(_palette.OrbitPathArrow, new Point(left.X, left.Y), new Point(right.X, right.Y));
+            }
+
             if (selected is not null && EditableRotationSpec(selected) is { } rotSpec)
             {
                 RotationDialRenderer.Draw(context, v, selected, rotSpec, _rotating || _dialKnobHovered);
@@ -568,6 +578,11 @@ namespace CtrDxEditor.Rendering
             Vec2 tl = v.LevelToScreen(new Vec2(0, 0));
             Vec2 br = v.LevelToScreen(new Vec2(doc.Width, doc.Height));
 
+            // Decoration is clipped to the level's vertical span but not its width: the background column and
+            // the water band both legitimately overhang a narrow level's sides, while nothing may spill past
+            // its top or bottom edge.
+            Rect levelClip = new(0, tl.Y, renderSize.Width, br.Y - tl.Y);
+
             Bitmap? bg = sprites.GetBackground(ActiveBackground);
             if (bg is not null && bg.Size is { Width: > 0, Height: > 0 } bgSize)
             {
@@ -578,7 +593,7 @@ namespace CtrDxEditor.Rendering
                     p2Aspect, SpriteCache.GetBackgroundP2Y(ActiveBackground),
                     SpriteCache.GetEarthBgPosition(ActiveBackground));
 
-                using (context.PushClip(new Rect(0, tl.Y, renderSize.Width, br.Y - tl.Y)))
+                using (context.PushClip(levelClip))
                 {
                     if (layout.TileHeight > 0.5)
                     {
@@ -608,6 +623,21 @@ namespace CtrDxEditor.Rendering
                                 LevelSceneRenderer.LevelRectToScreen(v, ec.X - (ew / 2.0), ec.Y - (eh / 2.0), ew, eh));
                         }
                     }
+                }
+            }
+
+            // Water's back layer sits under the scene objects, matching GameScene.Draw's split
+            // (DrawBack at :93, DrawFront at :329). Under the grid too, so the grid stays readable.
+            //
+            // Clipped to the level because the game's bottom shadow is anchored to the screen's bottom edge
+            // and drawn 323px tall from a 115px tile, so it tiles ~2.8x down and spills below the map. In
+            // game those repeats fall off-screen; the editor has no screen, so the clip is what hides them.
+            LevelBounds? waterBand = WaterGeometry.Band(doc.Width, doc.Height, CurrentWaterHeight(doc));
+            if (waterBand is { } backBand)
+            {
+                using (context.PushClip(levelClip))
+                {
+                    WaterRenderer.DrawBack(context, v, sprites, backBand, doc.Height);
                 }
             }
 
@@ -719,6 +749,17 @@ namespace CtrDxEditor.Rendering
                     ObjectRotation.StoredAngle(steamTube, RotationTable.For("steamTube")!));
             }
 
+            // Water's front layer — surface tile and top shadow — draws over the scene objects. Clipped to
+            // the level for the same reason as the back layer: the 323px top shadow runs past the map's
+            // bottom edge whenever the pool is shallower than it is tall.
+            if (waterBand is { } frontBand)
+            {
+                using (context.PushClip(levelClip))
+                {
+                    WaterRenderer.DrawFront(context, v, sprites, frontBand);
+                }
+            }
+
             if (grabRadiusPen is not null)
             {
                 GrabRenderer.DrawGrabRadiusRings(context, v, objects, grabRadiusPen);
@@ -774,6 +815,18 @@ namespace CtrDxEditor.Rendering
         private double? PreviewAnimationSeconds(LevelObject obj)
         {
             return IsAnimationPreviewing(obj) ? AnimationPreviewElapsedSeconds : null;
+        }
+
+        /// <summary>
+        /// The water height to render, in level units. Under a full animation preview the pool drains over
+        /// the elapsed time as GameScene.Update does — the water falls, it never rises. Water is level-wide
+        /// with no object to focus, so it only previews in All mode.
+        /// </summary>
+        private double CurrentWaterHeight(LevelDocument doc)
+        {
+            return AnimationPreviewMode == ViewModels.AnimationPreviewMode.All
+                ? WaterGeometry.DrainedWater(doc.Water, doc.WaterSpeed, AnimationPreviewElapsedSeconds)
+                : doc.Water;
         }
     }
 }
