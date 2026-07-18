@@ -345,6 +345,18 @@ namespace CtrDxEditor.Rendering
                         context, v, sprites, previewHand, 0.7,
                         TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0);
                 }
+                else if (AntPath.IsAnts(dragPreviewElement)
+                    && DescriptorTable.CtrObjects.For(dragPreviewElement) is { } antDescriptor)
+                {
+                    LevelObject previewAnts = Placement.CreateObject(
+                        antDescriptor,
+                        (int)Math.Round(_dragPreviewLevel.X),
+                        (int)Math.Round(_dragPreviewLevel.Y));
+                    using (context.PushOpacity(0.7))
+                    {
+                        AntRenderer.Draw(context, v, sprites, previewAnts, elapsedSeconds: null);
+                    }
+                }
                 else if (sprites.GetSprite(LevelSceneRenderer.CanvasSpriteKey(
                     dragPreviewElement == "sock" && SpecialEvents.IsXmas ? "sock_xmas" : dragPreviewElement,
                     doc.NightLevel), ActiveCandySkin, ActiveOmNomSupport) is { } dragPreviewSprite)
@@ -532,30 +544,30 @@ namespace CtrDxEditor.Rendering
         /// <summary>Draws editable handles, segment inserts, and the append nub for the selected polyline path.</summary>
         private void DrawPolylinePointHandles(DrawingContext context, ViewTransform v, LevelObject obj)
         {
-            if (!IsEditablePolyline(obj))
+            if (EditablePath.For(obj) is not { } path)
             {
                 return;
             }
 
-            string path = obj.GetAttr("path")!;
-            Vec2[] points = MoverPath.CanonicalPoints(new Vec2(obj.X, obj.Y), path);
+            Vec2[] points = path.Points;
             if (points.Length < 2)
             {
                 return;
             }
 
-            bool canAddPoint = MoverPath.CanAddCanonicalPoint(new Vec2(obj.X, obj.Y), path);
+            bool canAddPoint = path.CanAdd;
 
             // Segment midpoint insert dots use fuller opacity so they read as interactive handles.
             if (canAddPoint)
             {
                 using (context.PushOpacity(0.6))
                 {
-                    for (int i = 0; i < points.Length - 1; i++)
+                    for (int i = 0; i < path.SegmentCount; i++)
                     {
+                        Vec2 next = points[(i + 1) % points.Length];
                         Vec2 midpoint = new(
-                            (points[i].X + points[i + 1].X) / 2,
-                            (points[i].Y + points[i + 1].Y) / 2);
+                            (points[i].X + next.X) / 2,
+                            (points[i].Y + next.Y) / 2);
                         Vec2 screen = v.LevelToScreen(midpoint);
                         context.DrawEllipse(Brushes.White, _palette.OrbitPathArrow,
                             new Point(screen.X, screen.Y), 3, 3);
