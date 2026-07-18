@@ -5,11 +5,13 @@ using System.Linq;
 using System.Xml.Linq;
 
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 
 using CtrDxEditor.Content;
+using CtrDxEditor.Core.Descriptors;
 using CtrDxEditor.Core.Document;
 using CtrDxEditor.Core.Editing;
 using CtrDxEditor.Core.Geometry;
@@ -201,6 +203,31 @@ namespace CtrDxEditor.Rendering
                 DrawTutorialTextResizeHandle(context, v, sprites, selected);
                 DrawPolylinePointHandles(context, v, selected);
 
+                // Tint the active hand segment so it is clear which one the dial and fields act on, and give
+                // the segment under the cursor a fainter hover tint as a "click to select" cue.
+                if (HandObject.IsHand(selected.Type))
+                {
+                    if (_handHoverSegment > 0 && _handHoverSegment != _handActiveSegment)
+                    {
+                        HandRenderer.DrawSegmentHighlight(
+                            context, v, sprites, selected, _handHoverSegment,
+                            _palette.HandSegmentHoverTint, _palette.HandSegmentHoverTint);
+                    }
+                    if (_handActiveSegment > 0)
+                    {
+                        HandRenderer.DrawSegmentHighlight(
+                            context, v, sprites, selected, _handActiveSegment,
+                            _palette.HandSegmentTint, _palette.HandSegmentMark);
+                    }
+                }
+
+                // Ghost segment button showing where an Alt-click would split the hovered bone.
+                if (_handSplitPreview is { } splitPreview && HandObject.IsHand(selected.Type))
+                {
+                    HandRenderer.DrawSplitPreview(
+                        context, v, sprites, splitPreview.Position, splitPreview.Rotatable, 0.6);
+                }
+
                 if (selected.Type == "transporter")
                 {
                     ConveyorRenderer.DrawHandles(context, v, selected, _palette.OrbitPathArrow);
@@ -234,9 +261,15 @@ namespace CtrDxEditor.Rendering
                 context.DrawLine(_palette.OrbitPathArrow, new Point(left.X, left.Y), new Point(right.X, right.Y));
             }
 
-            if (selected is not null && EditableRotationSpec(selected) is { } rotSpec)
+            if (selected is not null && EditableRotationTarget(selected) is { } rotTarget)
             {
-                RotationDialRenderer.Draw(context, v, selected, rotSpec, _rotating || _dialKnobHovered);
+                RotationDialRenderer.Draw(
+                    context,
+                    v,
+                    rotTarget.Center,
+                    rotTarget.StoredAngle,
+                    rotTarget.Spec,
+                    _rotating || _dialKnobHovered);
             }
 
             // Translucent preview of the object being dragged from the palette, at its snapped drop spot.
@@ -297,6 +330,20 @@ namespace CtrDxEditor.Rendering
                             new Rect(Bounds.Size),
                             previewDark);
                     }
+                }
+                else if (HandObject.IsHand(dragPreviewElement)
+                    && DescriptorTable.CtrObjects.For(dragPreviewElement) is { } handDescriptor)
+                {
+                    // The hand is custom-rendered from hand_parts, so preview the real articulated arm built
+                    // exactly as the drop builds it (same placement defaults) rather than a composited sprite.
+                    // DrawGhost composites the whole arm as one layer so its pieces fade uniformly.
+                    LevelObject previewHand = Placement.CreateObject(
+                        handDescriptor,
+                        (int)Math.Round(_dragPreviewLevel.X),
+                        (int)Math.Round(_dragPreviewLevel.Y));
+                    HandRenderer.DrawGhost(
+                        context, v, sprites, previewHand, 0.7,
+                        TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0);
                 }
                 else if (sprites.GetSprite(LevelSceneRenderer.CanvasSpriteKey(
                     dragPreviewElement == "sock" && SpecialEvents.IsXmas ? "sock_xmas" : dragPreviewElement,

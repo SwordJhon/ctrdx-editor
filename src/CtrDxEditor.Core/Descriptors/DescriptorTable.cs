@@ -227,6 +227,12 @@ namespace CtrDxEditor.Core.Descriptors
                 MaxCount: int.MaxValue,
                 LocalizationName: "snail",
                 Game: "Cut the Rope: Experiments"),
+
+             // Mechanical hand
+            new ObjectDescriptor("hand", "Mechanical hand",
+            [
+                new AttributeSpec("segmentsCount", AttrType.Whole, "1"),
+            ], MaxCount: int.MaxValue, Game: "Cut the Rope: Experiments"),
         ]);
     }
 }

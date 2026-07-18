@@ -61,6 +61,11 @@ namespace CtrDxEditor.Rendering
         /// <returns>The selection bounds in level units.</returns>
         public static LevelBounds SelectionBounds(SpriteCache sprites, LevelObject obj, int candySkin, int omNomSupport, bool nightLevel)
         {
+            if (HandObject.IsHand(obj.Type))
+            {
+                return HandGeometry.Bounds(obj);
+            }
+
             // A movable grab's marquee / click target wraps the whole rail, not just the hook, so it can
             // be selected by clicking anywhere along the bar.
             if (GrabRenderer.DrawsMovableRail(obj) && GrabRail.Of(obj) is { } rail)
@@ -271,6 +276,12 @@ namespace CtrDxEditor.Rendering
             {
                 ConveyorRenderer.Draw(ctx, v, sprites, obj);
                 DrawBindingIdLabel(ctx, v, obj, objects, x, y);
+                return;
+            }
+
+            if (HandObject.IsHand(obj.Type))
+            {
+                HandRenderer.Draw(ctx, v, sprites, obj);
                 return;
             }
 
@@ -769,8 +780,7 @@ namespace CtrDxEditor.Rendering
             ];
 
             RotationSpec? rotSpec = RotationTable.For(obj.Type);
-            double degrees = previewRotationDegrees
-                + (rotSpec is not null ? ObjectRotation.DisplayDegrees(obj, rotSpec) : 0.0);
+            double degrees = previewRotationDegrees + AuthoredSelectionDegrees(obj, rotSpec);
             if (degrees == 0)
             {
                 return points;
@@ -819,8 +829,7 @@ namespace CtrDxEditor.Rendering
         {
             bounds = PreviewSelectionBounds(obj, bounds, animationPreviewSeconds);
             RotationSpec? rotSpec = RotationTable.For(obj.Type);
-            double degrees = previewRotationDegrees
-                + (rotSpec is not null ? ObjectRotation.DisplayDegrees(obj, rotSpec) : 0.0);
+            double degrees = previewRotationDegrees + AuthoredSelectionDegrees(obj, rotSpec);
             if (degrees == 0)
             {
                 return bounds.Contains(point);
@@ -836,6 +845,19 @@ namespace CtrDxEditor.Rendering
                 center.X + (dx * cos) - (dy * sin),
                 center.Y + (dx * sin) + (dy * cos));
             return bounds.Contains(unrotated);
+        }
+
+        /// <summary>
+        /// The authored on-screen rotation of the selection box in degrees. A hand carries one angle per
+        /// segment rather than a single <see cref="RotationTable"/> entry, so its box is oriented by the base
+        /// segment's angle (about the base, which the null-spec rotation center already resolves to). Every
+        /// other object uses its rotation spec, or 0 when it has none.
+        /// </summary>
+        private static double AuthoredSelectionDegrees(LevelObject obj, RotationSpec? spec)
+        {
+            return HandObject.IsHand(obj.Type)
+                ? HandGeometry.BaseAngle(obj)
+                : spec is not null ? ObjectRotation.DisplayDegrees(obj, spec) : 0.0;
         }
 
         private static Vec2 SelectionRotationCenter(

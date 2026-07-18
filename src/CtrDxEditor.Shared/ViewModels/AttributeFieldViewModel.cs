@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -76,10 +77,11 @@ namespace CtrDxEditor.ViewModels
             Action<string?> set,
             Action onChanged,
             Action? onChanging = null,
-            Func<bool>? isEnabled = null)
+            Func<bool>? isEnabled = null,
+            string? labelName = null)
         {
             Name = name;
-            Label = Localizer.AttributeName(name);
+            Label = Localizer.AttributeName(labelName ?? name);
             IsBool = type == AttrType.Bool;
             IsNumeric = type is AttrType.Whole or AttrType.Number;
             AllowsDecimal = type == AttrType.Number;
@@ -102,6 +104,18 @@ namespace CtrDxEditor.ViewModels
 
         /// <summary>Optional help text; when set, the panel shows a help icon with this as its tooltip.</summary>
         public string? HelpText { get; init; }
+
+        /// <summary>
+        /// The title of the collapsible section this field belongs to, or null to render it bare. Null on
+        /// every field unless a builder opts in, so ungrouped panels are unchanged.
+        /// </summary>
+        public string? GroupHeader { get; init; }
+
+        /// <summary>
+        /// A stable identity for this field's section, letting two sections share a header text without
+        /// merging. -1 means the anonymous ungrouped section.
+        /// </summary>
+        public int GroupIndex { get; init; } = -1;
 
         /// <summary>Whether this field has help text to surface via a help icon.</summary>
         public bool HasHelp => !string.IsNullOrEmpty(HelpText);
@@ -130,9 +144,34 @@ namespace CtrDxEditor.ViewModels
         {
             "timeout" or "time" => 1,
             "spinSpeed" or "orbitRadius" or "orbitSpeed" or "polylineSpeed" => 1,
-            "length" or "radius" or "moveLength" or "moveOffset" or "litRadius" or "group" => 0,
+            "length" or "radius" or "moveLength" or "moveOffset" or "litRadius" or "group" or "segmentsCount" => 0,
             _ => -9999,
         };
+
+        /// <summary>
+        /// Whether this numeric field renders as an up/down spinner (like the level-settings numbers) instead
+        /// of a plain box. Opt-in per field; used for the hand's segment count so segments can be added and
+        /// removed by stepping.
+        /// </summary>
+        public bool IsStepper { get; init; }
+
+        /// <summary>Whether this field renders as the plain numeric box (numeric, but not a stepper).</summary>
+        public bool IsPlainNumeric => IsNumeric && !IsStepper;
+
+        /// <summary>The current value as a number for a <see cref="IsStepper"/> field, or null when unset.</summary>
+        public decimal? NumericValue
+        {
+            get => decimal.TryParse(Value, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal d) ? d : null;
+            set
+            {
+                if (value is { } v)
+                {
+                    Value = AllowsDecimal
+                        ? v.ToString(CultureInfo.InvariantCulture)
+                        : decimal.Truncate(v).ToString("0", CultureInfo.InvariantCulture);
+                }
+            }
+        }
 
         /// <summary>Whether this field renders as a free-form text box.</summary>
         public bool IsText => EnumOptions is null && !IsBool && !IsNumeric;
@@ -170,6 +209,7 @@ namespace CtrDxEditor.ViewModels
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(SelectedOption));
                 OnPropertyChanged(nameof(BoolValue));
+                OnPropertyChanged(nameof(NumericValue));
             }
         }
 
@@ -186,6 +226,7 @@ namespace CtrDxEditor.ViewModels
             OnPropertyChanged(nameof(Value));
             OnPropertyChanged(nameof(SelectedOption));
             OnPropertyChanged(nameof(BoolValue));
+            OnPropertyChanged(nameof(NumericValue));
             if (_isEnabledFn is not null)
             {
                 IsEnabled = _isEnabledFn();

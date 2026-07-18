@@ -194,6 +194,9 @@ namespace CtrDxEditor.Rendering
         /// <summary>Callback raised when a canvas drag moves the selected object, so bound views can refresh.</summary>
         public Action? SelectedObjectMoved { get; set; }
 
+        /// <summary>Raised with a segment index when a hand joint is pressed, so the panel can expand it.</summary>
+        public Action<int>? HandSegmentActivated { get; set; }
+
         /// <summary>Callback raised (F2) to open the inline text editor over the given tutorial text.</summary>
         public Action<LevelObject>? EditTutorialTextRequested { get; set; }
 
@@ -303,6 +306,42 @@ namespace CtrDxEditor.Rendering
         /// <summary>True while hovering the end of a selected polyline that has hit its point cap (shows the limit hint).</summary>
         private bool _polylineAtLimitHint;
 
+        /// <summary>The hand segment whose joint is being dragged, or 0 when no hand joint drag is active.</summary>
+        private int _handJointDrag;
+
+        /// <summary>True while the hand's base is being dragged.</summary>
+        private bool _handBaseDrag;
+
+        /// <summary>True when the ordinary object-drag path is moving a mechanical hand.</summary>
+        private bool _handObjectDrag;
+
+        /// <summary>Pointer position where the current hand body/base/joint gesture began, in level units.</summary>
+        private Vec2 _handDragStartPointer;
+
+        /// <summary>Original base or joint position, preserving the pointer's grab offset once a button drag begins.</summary>
+        private Vec2 _handDragStartTarget;
+
+        /// <summary>True after the current hand gesture crosses its screen-space drag threshold.</summary>
+        private bool _handDragHasMoved;
+
+        /// <summary>The hand joint under the cursor, or 0 when none; drives Delete/Backspace.</summary>
+        private int _handHoverJoint;
+
+        /// <summary>The hand segment (bone) under the cursor, or 0 when none; drives the hover tint.</summary>
+        private int _handHoverSegment;
+
+        /// <summary>The hand segment whose rotation dial is active, or 0 when no hand segment is active.</summary>
+        private int _handActiveSegment;
+
+        /// <summary>
+        /// Where an Alt-hover would split a bone: the ghost joint's level position and the rotatable flag it
+        /// would inherit, or null when no split is being previewed.
+        /// </summary>
+        private (Vec2 Position, bool Rotatable)? _handSplitPreview;
+
+        /// <summary>Last pointer position in level units while hovering, so an Alt press can refresh the split preview without a move.</summary>
+        private Vec2 _lastHoverLevel;
+
         /// <summary>Level-space offset from the dragged object's origin to the pointer, held constant during a drag.</summary>
         private Vec2 _dragOffset;
 
@@ -406,6 +445,10 @@ namespace CtrDxEditor.Rendering
                 _ghostPreview.Clear();
                 _ghostIconHits.Clear();
                 _polylinePointDrag = -1;
+                _handActiveSegment = 0;
+                _handHoverJoint = 0;
+                _handHoverSegment = 0;
+                _handSplitPreview = null;
                 ResetPolylineHover();
                 InvalidateVisual();
             }

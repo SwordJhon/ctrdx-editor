@@ -210,6 +210,36 @@ namespace CtrDxEditor.Tests
             Assert.Equal(normal.H, night.H, 3);
         }
 
+        /// <summary>A hand's selection box encloses its full articulated chain rather than only the base sprite.</summary>
+        [Fact]
+        public void HandSelectionBoundsUseArticulatedChain()
+        {
+            SpriteCache sprites = new(new FakeStore());
+            LevelObject hand = new(new XElement(
+                "hand",
+                new XAttribute("x", "100"),
+                new XAttribute("y", "200"),
+                new XAttribute("segmentsCount", "2"),
+                new XAttribute("segment1Angle", "0"),
+                new XAttribute("segment1Length", "100"),
+                new XAttribute("segment1Rotatable", "true"),
+                new XAttribute("segment2Angle", "90"),
+                new XAttribute("segment2Length", "50"),
+                new XAttribute("segment2Rotatable", "true")));
+            MethodInfo? method = SceneRenderer.GetMethod(
+                "SelectionBounds",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(method);
+
+            LevelBounds actual = (LevelBounds)method.Invoke(null, [sprites, hand, 0, 0, false])!;
+            LevelBounds expected = HandGeometry.Bounds(hand);
+
+            Assert.Equal(expected.X, actual.X, 6);
+            Assert.Equal(expected.Y, actual.Y, 6);
+            Assert.Equal(expected.W, actual.W, 6);
+            Assert.Equal(expected.H, actual.H, 6);
+        }
+
         /// <summary>Spike selection uses the trimmed visible strip, like other sprite-backed objects.</summary>
         [Fact]
         public void SpikeSelectionBoundsUseTrimmedSpriteBounds()
@@ -251,6 +281,36 @@ namespace CtrDxEditor.Tests
             Assert.Equal(81.5, points[0].Y, 3);
             Assert.Equal(120.625, points[1].X, 3);
             Assert.Equal(318.167, points[1].Y, 3);
+        }
+
+        /// <summary>
+        /// A hand's selection outline follows the arm's angle: a 45-degree single-segment arm gets a thin
+        /// tilted box hugging the bone, not the large axis-aligned square its bounding box would otherwise be.
+        /// </summary>
+        [Fact]
+        public void HandSelectionOutlineRotatesWithArm()
+        {
+            LevelObject hand = new(new XElement(
+                "hand",
+                new XAttribute("x", "0"),
+                new XAttribute("y", "0"),
+                new XAttribute("segmentsCount", "1"),
+                new XAttribute("segment1Angle", "45"),
+                new XAttribute("segment1Length", "100"),
+                new XAttribute("segment1Rotatable", "true")));
+            LevelBounds bounds = HandGeometry.Bounds(hand);
+            MethodInfo? method = SceneRenderer.GetMethod(
+                "SelectionOutlinePoints",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(method);
+
+            Point[] points = (Point[])method.Invoke(null, [ViewTransform.Identity, hand, bounds])!;
+
+            // Corners of the arm-local box (-17,-17)-(117,17) rotated 45 degrees about the base at (0,0).
+            Assert.Equal(0, points[0].X, 3);
+            Assert.Equal(-24.042, points[0].Y, 3);
+            Assert.Equal(94.752, points[1].X, 3);
+            Assert.Equal(70.711, points[1].Y, 3);
         }
 
         /// <summary>

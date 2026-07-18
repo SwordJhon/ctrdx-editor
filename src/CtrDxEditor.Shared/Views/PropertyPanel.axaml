@@ -12,62 +12,124 @@
     <Style Selector="TextBlock.field-label:disabled">
       <Setter Property="Foreground" Value="{DynamicResource EditorBrush.Text.Disabled}" />
     </Style>
+
+    <!-- Flat collapsible header for grouped fields (mechanical hand segments): reads as part of the panel
+         rather than a stock expander box, so the section title and its fields line up with the bare fields. -->
+    <Style Selector="ToggleButton.segment-header">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2,4" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="ToggleButton.segment-header /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="ToggleButton.segment-header:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EditorBrush.Surface.CardHover}" />
+    </Style>
+    <Style Selector="ToggleButton.segment-header:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.segment-header:checked:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EditorBrush.Surface.CardHover}" />
+    </Style>
   </UserControl.Styles>
+  <UserControl.Resources>
+    <DataTemplate x:Key="FieldTemplate" x:DataType="vm:AttributeFieldViewModel">
+      <Grid Margin="0,2"
+            Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" MinWidth="124" SharedSizeGroup="LabelColumn" />
+          <ColumnDefinition Width="*" MinWidth="96" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Orientation="Horizontal"
+                    VerticalAlignment="Center" Margin="0,0,8,0" Spacing="4">
+          <TextBlock Classes="field-label" Text="{Binding Label}"
+                     IsEnabled="{Binding IsEnabled}" VerticalAlignment="Center" />
+          <icons:MaterialIcon Kind="HelpCircleOutline" Width="14" Height="14"
+                              VerticalAlignment="Center"
+                              IsVisible="{Binding HasHelp}"
+                              Foreground="{DynamicResource EditorBrush.Text.Subtle}"
+                              ToolTip.Tip="{Binding HelpText}" />
+        </StackPanel>
+        <ComboBox Grid.Column="1" IsVisible="{Binding EnumOptions, Converter={x:Static ObjectConverters.IsNotNull}}"
+                  IsEnabled="{Binding IsEnabled}"
+                  Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}"
+                  ItemsSource="{Binding EnumOptions}"
+                  SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:AttributeOptionViewModel">
+              <ctl:MarqueeTextBlock Text="{Binding Label}" HorizontalAlignment="Stretch" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <CheckBox Grid.Column="1" IsVisible="{Binding IsBool}"
+                  IsEnabled="{Binding IsEnabled}"
+                  Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}"
+                  IsChecked="{Binding BoolValue, Mode=TwoWay}" />
+        <ctl:NumericTextBox Grid.Column="1" IsVisible="{Binding IsPlainNumeric}"
+                 IsEnabled="{Binding IsEnabled}"
+                 Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}"
+                 Minimum="{Binding NumericMinimum}"
+                 AcceptDecimal="{Binding AllowsDecimal}"
+                 Text="{Binding Value, Mode=TwoWay}" />
+        <NumericUpDown Grid.Column="1" IsVisible="{Binding IsStepper}"
+                 IsEnabled="{Binding IsEnabled}"
+                 Minimum="{Binding NumericMinimum}"
+                 Increment="1"
+                 FormatString="0"
+                 HorizontalAlignment="Stretch"
+                 Value="{Binding NumericValue, Mode=TwoWay}" />
+        <TextBox Grid.Column="1" IsVisible="{Binding IsText}"
+                 IsEnabled="{Binding IsEnabled}"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 MinHeight="72"
+                 MaxHeight="200"
+                 VerticalContentAlignment="Top"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}"
+                 Text="{Binding Value, Mode=TwoWay}" />
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
   <DockPanel>
     <TextBlock DockPanel.Dock="Top" Text="{loc:Tr Panel.Properties}" FontWeight="Bold" Margin="8,8,8,4" />
-    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-      <ItemsControl ItemsSource="{Binding Fields}" Margin="8,0,8,14" Grid.IsSharedSizeScope="True">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <ItemsControl ItemsSource="{Binding FieldGroups}" Margin="8,0,8,14" Grid.IsSharedSizeScope="True">
         <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:AttributeFieldViewModel">
-            <Grid Margin="0,2"
-                  Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" MinWidth="100" SharedSizeGroup="LabelColumn" />
-                <ColumnDefinition Width="100" />
-              </Grid.ColumnDefinitions>
-              <StackPanel Grid.Column="0" Orientation="Horizontal"
-                          VerticalAlignment="Center" Margin="0,0,8,0" Spacing="4">
-                <TextBlock Classes="field-label" Text="{Binding Label}"
-                           IsEnabled="{Binding IsEnabled}" VerticalAlignment="Center" />
-                <icons:MaterialIcon Kind="HelpCircleOutline" Width="14" Height="14"
-                                    VerticalAlignment="Center"
-                                    IsVisible="{Binding HasHelp}"
-                                    Foreground="{DynamicResource EditorBrush.Text.Subtle}"
-                                    ToolTip.Tip="{Binding HelpText}" />
+          <DataTemplate x:DataType="vm:PropertyGroupViewModel">
+            <StackPanel>
+              <!-- Ungrouped fields render bare, exactly as before groups existed. -->
+              <ItemsControl ItemsSource="{Binding Fields}"
+                            ItemTemplate="{StaticResource FieldTemplate}"
+                            IsVisible="{Binding !HasHeader}" />
+              <!-- Grouped fields (mechanical hand segments): a flat collapsible section whose fields line up
+                   with the bare fields above, instead of a stock expander that indents and boxes them. -->
+              <StackPanel IsVisible="{Binding HasHeader}" Margin="0,6,0,0">
+                <ToggleButton Classes="segment-header" IsChecked="{Binding IsExpanded, Mode=TwoWay}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Panel Width="16" Height="16" VerticalAlignment="Center">
+                      <icons:MaterialIcon Kind="ChevronRight" Width="16" Height="16"
+                                          IsVisible="{Binding !IsExpanded}"
+                                          Foreground="{DynamicResource EditorBrush.Text.Subtle}" />
+                      <icons:MaterialIcon Kind="ChevronDown" Width="16" Height="16"
+                                          IsVisible="{Binding IsExpanded}"
+                                          Foreground="{DynamicResource EditorBrush.Text.Subtle}" />
+                    </Panel>
+                    <TextBlock Text="{Binding Header}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  </StackPanel>
+                </ToggleButton>
+                <Border Height="1" Background="{DynamicResource EditorBrush.Surface.Divider}" Margin="0,2,0,4" />
+                <ItemsControl ItemsSource="{Binding Fields}"
+                              ItemTemplate="{StaticResource FieldTemplate}"
+                              IsVisible="{Binding IsExpanded}" />
               </StackPanel>
-              <ComboBox Grid.Column="1" IsVisible="{Binding EnumOptions, Converter={x:Static ObjectConverters.IsNotNull}}"
-                        IsEnabled="{Binding IsEnabled}"
-                        Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}"
-                        ItemsSource="{Binding EnumOptions}"
-                        SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
-                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                <ComboBox.ItemTemplate>
-                  <DataTemplate x:DataType="vm:AttributeOptionViewModel">
-                    <ctl:MarqueeTextBlock Text="{Binding Label}" HorizontalAlignment="Stretch" />
-                  </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
-              <CheckBox Grid.Column="1" IsVisible="{Binding IsBool}"
-                        IsEnabled="{Binding IsEnabled}"
-                        Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}"
-                        IsChecked="{Binding BoolValue, Mode=TwoWay}" />
-              <ctl:NumericTextBox Grid.Column="1" IsVisible="{Binding IsNumeric}"
-                       IsEnabled="{Binding IsEnabled}"
-                       Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}"
-                       Minimum="{Binding NumericMinimum}"
-                       AcceptDecimal="{Binding AllowsDecimal}"
-                       Text="{Binding Value, Mode=TwoWay}" />
-              <TextBox Grid.Column="1" IsVisible="{Binding IsText}"
-                       IsEnabled="{Binding IsEnabled}"
-                       AcceptsReturn="True"
-                       TextWrapping="Wrap"
-                       MinHeight="72"
-                       MaxHeight="200"
-                       VerticalContentAlignment="Top"
-                       ScrollViewer.VerticalScrollBarVisibility="Auto"
-                       Cursor="{Binding IsEnabled, Converter={x:Static conv:PropertyFieldStateConverters.Cursor}}"
-                       Text="{Binding Value, Mode=TwoWay}" />
-            </Grid>
+            </StackPanel>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>

@@ -136,6 +136,37 @@ namespace CtrDxEditor.Rendering
             }
         }
 
+        /// <summary>Records a hand press without opening an undo transaction until it becomes a drag.</summary>
+        private void PrepareHandDrag(Vec2 pointer, Vec2 target)
+        {
+            _handDragStartPointer = pointer;
+            _handDragStartTarget = target;
+            _handDragHasMoved = false;
+        }
+
+        /// <summary>Starts the pending hand edit once pointer travel reaches the screen-space threshold.</summary>
+        private bool BeginHandDrag(Vec2 levelPt)
+        {
+            if (_handDragHasMoved)
+            {
+                return true;
+            }
+            if (!HandGeometry.HasDragged(_handDragStartPointer, levelPt, View.Zoom))
+            {
+                return false;
+            }
+
+            _handDragHasMoved = true;
+            BeginDocumentEdit?.Invoke();
+            return true;
+        }
+
+        /// <summary>Moves a hand button by pointer delta so grabbing off-centre never makes it jump.</summary>
+        private Vec2 HandDragTarget(Vec2 levelPt)
+        {
+            return _handDragStartTarget + (levelPt - _handDragStartPointer);
+        }
+
         /// <summary>Which vinyl handle a level point is over, or <see cref="VinylGeometry.Handle.None"/>.</summary>
         private VinylGeometry.Handle HitVinylHandle(Vec2 levelPt)
         {
@@ -166,24 +197,24 @@ namespace CtrDxEditor.Rendering
         /// <returns>The dial handle under the point, or <see cref="ObjectRotation.Handle.None"/>.</returns>
         private ObjectRotation.Handle HitRotationDial(Vec2 levelPt)
         {
-            if (SelectedObject is not { } obj || View.Zoom <= 0 || EditableRotationSpec(obj) is not { } spec)
+            if (SelectedObject is not { } obj || View.Zoom <= 0 || EditableRotationTarget(obj) is not { } target)
             {
                 return ObjectRotation.Handle.None;
             }
-            Vec2 c = ObjectRotation.Center(obj, spec);
             double radius = RotationDialRenderer.RadiusPx / View.Zoom;
             return ObjectRotation.HitTest(
-                c, ObjectRotation.StoredAngle(obj, spec), spec, radius, levelPt,
+                target.Center, target.StoredAngle, target.Spec, radius, levelPt,
                 ringTolerance: RotationDialRenderer.RingTolerancePx / View.Zoom,
                 knobTolerance: RotationDialRenderer.KnobTolerancePx / View.Zoom);
         }
 
-        /// <summary>Resolves an object's ordinary rotation spec or the ghost's preview-only bouncer spec.</summary>
-        private RotationSpec? EditableRotationSpec(LevelObject obj)
+        /// <summary>Resolves an ordinary object or the active hand segment into one dial target.</summary>
+        private RotationDialTarget? EditableRotationTarget(LevelObject obj)
         {
-            return obj.Type == "ghost" && _ghostPreview.ShowsRotationDial(obj)
+            RotationSpec? ordinarySpec = obj.Type == "ghost" && _ghostPreview.ShowsRotationDial(obj)
                 ? GhostBouncerRotation
                 : RotationTable.EditableFor(obj.Type);
+            return RotationDialTargetResolver.Resolve(obj, _handActiveSegment, ordinarySpec);
         }
 
         /// <summary>
@@ -191,23 +222,16 @@ namespace CtrDxEditor.Rendering
         /// is held, which snaps to the spec's step (15°).
         /// </summary>
         /// <param name="obj">The rotatable object being edited.</param>
-        /// <param name="spec">Rotation spec describing the object's angle attribute and snap step.</param>
+        /// <param name="target">Resolved object or hand-segment dial target.</param>
         /// <param name="center">Stable pivot captured when the dial gesture began.</param>
         /// <param name="levelPt">The pointer position in level coordinates.</param>
         /// <param name="mods">Active keyboard modifiers; Alt enables snapping.</param>
         private static void ApplyRotation(
-            LevelObject obj, RotationSpec spec, Vec2 center, Vec2 levelPt, KeyModifiers mods)
+            LevelObject obj, RotationDialTarget target, Vec2 center, Vec2 levelPt, KeyModifiers mods)
         {
             bool snap = mods.HasFlag(KeyModifiers.Alt);
-            double angle = ObjectRotation.AngleFromPoint(center, levelPt, spec, snap);
-            if (spec.CenterKind == RotationCenterKind.ConveyorMidpoint)
-            {
-                ConveyorGeometry.ApplyRotationAroundCenter(obj, angle, center);
-            }
-            else
-            {
-                obj.SetAttr(spec.AttributeName, ObjectRotation.Format(angle));
-            }
+            double angle = ObjectRotation.AngleFromPoint(center, levelPt, target.Spec, snap);
+            RotationDialTargetResolver.ApplyAngle(obj, target, angle, center);
         }
 
         /// <summary>
@@ -286,6 +310,70 @@ namespace CtrDxEditor.Rendering
 
             double deg = Math.Abs(ObjectRotation.Normalize(ObjectRotation.DisplayDegrees(obj, spec)));
             return deg is > 45 and < 135 ? VResizeCursor : ResizeCursor;
+        }
+
+        /// <summary>Cursor for a hand joint whose drag changes only its segment length.</summary>
+        private Cursor CursorForHandJoint(int index)
+        {
+            return SelectedObject is { } hand
+                && HandGeometry.SegmentResizeAxis(hand, index) == HandGeometry.ResizeAxis.Vertical
+                ? VResizeCursor
+                : ResizeCursor;
+        }
+
+        /// <summary>
+        /// Recomputes the Alt-hover split preview from a hover point. Shows the ghost joint at the cursor's
+        /// projection onto a bone while Alt is held over the selected hand, and clears it otherwise. Repaints
+        /// on any change and while the ghost tracks the cursor, so the preview follows the pointer live.
+        /// </summary>
+        /// <param name="levelPt">The hover position in level units.</param>
+        /// <param name="altHeld">Whether the split modifier is currently down.</param>
+        private void UpdateHandSplitPreview(Vec2 levelPt, bool altHeld)
+        {
+            (Vec2 Position, bool Rotatable)? preview = null;
+            if (altHeld && SelectedObject is { } hand && HandObject.IsHand(hand.Type))
+            {
+                double tolerance = 9 / View.Zoom;
+                HandGeometry.Handle hit = HandGeometry.HitTest(hand, levelPt, tolerance, tolerance / 2);
+                if (hit.Kind == HandGeometry.HandleKind.Bone)
+                {
+                    preview = (HandGeometry.SplitPoint(hand, hit.Index, levelPt), HandObject.Rotatable(hand, hit.Index));
+                }
+            }
+
+            bool wasShowing = _handSplitPreview is not null;
+            _handSplitPreview = preview;
+            if (preview is not null || wasShowing)
+            {
+                InvalidateVisual();
+            }
+        }
+
+        /// <summary>
+        /// Recomputes the hovered-segment tint from a hover point. Marks the bone under the cursor for a plain
+        /// hover over the selected hand, and clears it while Alt is held (a split, not a selection) or off any
+        /// bone. Repaints on a change.
+        /// </summary>
+        /// <param name="levelPt">The hover position in level units.</param>
+        /// <param name="altHeld">Whether the split modifier is currently down.</param>
+        private void UpdateHandHoverSegment(Vec2 levelPt, bool altHeld)
+        {
+            int hovered = 0;
+            if (!altHeld && SelectedObject is { } hand && HandObject.IsHand(hand.Type))
+            {
+                double tolerance = 9 / View.Zoom;
+                HandGeometry.Handle hit = HandGeometry.HitTest(hand, levelPt, tolerance, tolerance / 2);
+                if (hit.Kind == HandGeometry.HandleKind.Bone)
+                {
+                    hovered = hit.Index;
+                }
+            }
+
+            if (_handHoverSegment != hovered)
+            {
+                _handHoverSegment = hovered;
+                InvalidateVisual();
+            }
         }
 
         /// <summary>Updates the hook hover state, repainting only on a change so the highlight art swaps in/out.</summary>
@@ -454,6 +542,23 @@ namespace CtrDxEditor.Rendering
             InvalidateVisual();
         }
 
+        /// <summary>Deletes one segment from the selected hand, shifting the live slots above it down.</summary>
+        /// <param name="index">The 1-based segment to remove.</param>
+        private void DeleteSelectedHandSegment(int index)
+        {
+            if (SelectedObject is not { } hand || !HandObject.IsHand(hand.Type) || index < 1)
+            {
+                return;
+            }
+
+            BeginDocumentEdit?.Invoke();
+            HandObject.DeleteSegment(hand, index);
+            _handActiveSegment = RotationDialTargetResolver.ClampActiveHandSegment(hand, _handActiveSegment);
+            SelectedObjectMoved?.Invoke();
+            CompleteDocumentEdit?.Invoke();
+            InvalidateVisual();
+        }
+
         /// <summary>Finds the index of an object within the list by reference/value equality.</summary>
         /// <param name="objects">The object list to search.</param>
         /// <param name="target">The object to locate.</param>
@@ -576,6 +681,19 @@ namespace CtrDxEditor.Rendering
             Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
             if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
             {
+                if (SelectedObject is { } rightHand && HandObject.IsHand(rightHand.Type))
+                {
+                    double rightTolerance = 9 / View.Zoom;
+                    HandGeometry.Handle rightHandHit = HandGeometry.HitTest(
+                        rightHand, levelPt, rightTolerance, rightTolerance / 2);
+                    if (rightHandHit.Kind == HandGeometry.HandleKind.Joint)
+                    {
+                        DeleteSelectedHandSegment(rightHandHit.Index);
+                        e.Handled = true;
+                        return;
+                    }
+                }
+
                 int rightHit = HitPolylinePoint(levelPt);
                 if (rightHit > 0)
                 {
@@ -690,15 +808,24 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
-            // Grabbing the selected object's rotation dial (knob or ring) rotates it; takes priority over
-            // object hit-testing so the dial wins over anything beneath it.
-            if (HitRotationDial(levelPt) != ObjectRotation.Handle.None
-                && SelectedObject is { } rotObj && EditableRotationSpec(rotObj) is { } rotSpec)
+            HandGeometry.Handle pressedHandHit = new(HandGeometry.HandleKind.None, 0);
+            if (SelectedObject is { } pressedHand && HandObject.IsHand(pressedHand.Type))
+            {
+                double handTolerance = 9 / View.Zoom;
+                pressedHandHit = HandGeometry.HitTest(
+                    pressedHand, levelPt, handTolerance, handTolerance / 2);
+            }
+
+            // The dial wins over underlying hand art except an end joint: a coincident joint must remain a
+            // length resize target so dragging the claw can never rotate the segment implicitly.
+            ObjectRotation.Handle pressedDialHit = HitRotationDial(levelPt);
+            if (RotationDialTargetResolver.DialHasPriority(pressedDialHit, pressedHandHit.Kind)
+                && SelectedObject is { } rotObj && EditableRotationTarget(rotObj) is { } rotTarget)
             {
                 BeginDocumentEdit?.Invoke();
-                _rotationDragCenter = ObjectRotation.Center(rotObj, rotSpec);
+                _rotationDragCenter = rotTarget.Center;
                 _rotating = true;
-                ApplyRotation(rotObj, rotSpec, _rotationDragCenter, levelPt, e.KeyModifiers);
+                ApplyRotation(rotObj, rotTarget, _rotationDragCenter, levelPt, e.KeyModifiers);
                 SelectedObjectMoved?.Invoke();
                 InvalidateVisual();
                 e.Pointer.Capture(this);
@@ -752,6 +879,60 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
+            if (SelectedObject is { } handObj && HandObject.IsHand(handObj.Type))
+            {
+                switch (pressedHandHit.Kind)
+                {
+                    case HandGeometry.HandleKind.Joint:
+                        _handJointDrag = pressedHandHit.Index;
+                        _handActiveSegment = pressedHandHit.Index;
+                        PrepareHandDrag(levelPt, HandGeometry.Joint(handObj, pressedHandHit.Index));
+                        HandSegmentActivated?.Invoke(pressedHandHit.Index);
+                        e.Handled = true;
+                        e.Pointer.Capture(this);
+                        return;
+
+                    case HandGeometry.HandleKind.Base:
+                        _handBaseDrag = true;
+                        PrepareHandDrag(levelPt, new Vec2(handObj.X, handObj.Y));
+                        e.Handled = true;
+                        e.Pointer.Capture(this);
+                        return;
+
+                    case HandGeometry.HandleKind.Bone:
+                        // Alt splits the bone at the cursor; a plain click only selects that segment so the
+                        // arm is never lengthened by accident. A fresh split becomes the joint-length drag.
+                        if (e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+                        {
+                            BeginDocumentEdit?.Invoke();
+                            _handSplitPreview = null;
+                            _handJointDrag = HandGeometry.SplitBone(handObj, pressedHandHit.Index, levelPt);
+                            _handActiveSegment = _handJointDrag;
+                            _handDragStartPointer = levelPt;
+                            _handDragStartTarget = HandGeometry.Joint(handObj, _handJointDrag);
+                            _handDragHasMoved = true;
+                            HandSegmentActivated?.Invoke(_handActiveSegment);
+                            SelectedObjectMoved?.Invoke();
+                            InvalidateVisual();
+                            e.Handled = true;
+                            e.Pointer.Capture(this);
+                            return;
+                        }
+
+                        _handActiveSegment = pressedHandHit.Index;
+                        HandSegmentActivated?.Invoke(pressedHandHit.Index);
+                        InvalidateVisual();
+                        e.Handled = true;
+                        return;
+
+                    case HandGeometry.HandleKind.None:
+                        break;
+
+                    default:
+                        throw new InvalidOperationException($"Unknown hand handle kind: {pressedHandHit.Kind}");
+                }
+            }
+
             List<LevelBounds> bounds = BuildHitBounds(doc);
 
             // Double-click toggles the lock. ClickCount keeps climbing (3, 4, ...) while clicking in the
@@ -776,9 +957,17 @@ namespace CtrDxEditor.Rendering
                 if (li >= 0 && HitBoundContains(locked, bounds[li], levelPt))
                 {
                     SelectedObject = locked;
-                    BeginDocumentEdit?.Invoke();
                     _dragOffset = levelPt - new Vec2(locked.X, locked.Y);
                     _dragging = true;
+                    _handObjectDrag = HandObject.IsHand(locked.Type);
+                    if (_handObjectDrag)
+                    {
+                        PrepareHandDrag(levelPt, new Vec2(locked.X, locked.Y));
+                    }
+                    else
+                    {
+                        BeginDocumentEdit?.Invoke();
+                    }
                     e.Pointer.Capture(this);
                 }
                 return;
@@ -808,9 +997,17 @@ namespace CtrDxEditor.Rendering
 
             LevelObject obj = doc.Objects[hit];
             SelectedObject = obj;
-            BeginDocumentEdit?.Invoke();
             _dragOffset = levelPt - new Vec2(obj.X, obj.Y);
             _dragging = true;
+            _handObjectDrag = HandObject.IsHand(obj.Type);
+            if (_handObjectDrag)
+            {
+                PrepareHandDrag(levelPt, new Vec2(obj.X, obj.Y));
+            }
+            else
+            {
+                BeginDocumentEdit?.Invoke();
+            }
             e.Pointer.Capture(this);
         }
 
@@ -820,6 +1017,34 @@ namespace CtrDxEditor.Rendering
             base.OnPointerMoved(e);
             Point p = e.GetPosition(this);
             Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
+
+            if (_handJointDrag > 0 && SelectedObject is { } draggedHand)
+            {
+                if (!BeginHandDrag(levelPt))
+                {
+                    e.Handled = true;
+                    return;
+                }
+                HandGeometry.ApplyLengthDrag(draggedHand, _handJointDrag, HandDragTarget(levelPt));
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
+
+            if (_handBaseDrag && SelectedObject is { } movedHand)
+            {
+                if (!BeginHandDrag(levelPt))
+                {
+                    e.Handled = true;
+                    return;
+                }
+                HandGeometry.ApplyBaseDrag(movedHand, HandDragTarget(levelPt));
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
 
             if (_resizingTutorialText && SelectedObject is { } tutorialText)
             {
@@ -888,9 +1113,9 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
-            if (_rotating && SelectedObject is { } rotObj && EditableRotationSpec(rotObj) is { } rotSpec)
+            if (_rotating && SelectedObject is { } rotObj && EditableRotationTarget(rotObj) is { } rotTarget)
             {
-                ApplyRotation(rotObj, rotSpec, _rotationDragCenter, levelPt, e.KeyModifiers);
+                ApplyRotation(rotObj, rotTarget, _rotationDragCenter, levelPt, e.KeyModifiers);
                 SelectedObjectMoved?.Invoke();
                 InvalidateVisual();
                 return;
@@ -933,7 +1158,6 @@ namespace CtrDxEditor.Rendering
                 GrabRail.Handle handle = HitRail(levelPt);
                 SetHookHovered(handle == GrabRail.Handle.SlideHook);
                 ObjectRotation.Handle dial = HitRotationDial(levelPt);
-                SetDialKnobHovered(dial == ObjectRotation.Handle.Knob);
                 SpikeResize.Handle stripHandle = HitStripResize(levelPt);
                 ConveyorGeometry.Handle conveyorHover = HitConveyor(levelPt);
                 VinylGeometry.Handle vinylHover = HitVinylHandle(levelPt);
@@ -946,6 +1170,27 @@ namespace CtrDxEditor.Rendering
                 _polylineNubHot = HitPolylineNub(levelPt);
                 _polylineAtLimitHint = HoveringPolylineLimit(levelPt);
                 bool overPolylineInsert = HitPolylineSegment(levelPt) >= 0;
+                _handHoverJoint = 0;
+                HandGeometry.HandleKind hoverHandKind = HandGeometry.HandleKind.None;
+                if (SelectedObject is { } hoverHand && HandObject.IsHand(hoverHand.Type))
+                {
+                    double hoverTolerance = 9 / View.Zoom;
+                    HandGeometry.Handle hoverHit = HandGeometry.HitTest(
+                        hoverHand, levelPt, hoverTolerance, hoverTolerance / 2);
+                    hoverHandKind = hoverHit.Kind;
+                    if (hoverHit.Kind == HandGeometry.HandleKind.Joint)
+                    {
+                        _handHoverJoint = hoverHit.Index;
+                    }
+                }
+                _lastHoverLevel = levelPt;
+                bool altHeld = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+                UpdateHandSplitPreview(levelPt, altHeld);
+                UpdateHandHoverSegment(levelPt, altHeld);
+                HandPointerAffordance handAffordance =
+                    RotationDialTargetResolver.ResolveHandAffordance(dial, hoverHandKind);
+                SetDialKnobHovered(
+                    handAffordance == HandPointerAffordance.Dial && dial == ObjectRotation.Handle.Knob);
                 bool waterHovered = HitsWaterHandle(p);
                 if (waterHovered != _waterHandleHovered)
                 {
@@ -957,16 +1202,23 @@ namespace CtrDxEditor.Rendering
                     InvalidateVisual();
                 }
                 Cursor = tutorialTextResizeHover ? ResizeCursor
+                    : _handSplitPreview is not null ? new Cursor(StandardCursorType.Cross)
                     : vinylHover != VinylGeometry.Handle.None ? new Cursor(StandardCursorType.Hand)
+                    : handAffordance == HandPointerAffordance.JointResize ? CursorForHandJoint(_handHoverJoint)
+                    : handAffordance == HandPointerAffordance.Dial ? new Cursor(StandardCursorType.Hand)
                     : _polylineNubHot || _polylineHoverPoint > 0 || overPolylineInsert
                     ? new Cursor(StandardCursorType.Hand)
-                    : dial != ObjectRotation.Handle.None ? new Cursor(StandardCursorType.Hand)
                     : stripHandle != SpikeResize.Handle.None ? CursorForStripResize()
                     : conveyorHover != ConveyorGeometry.Handle.None ? ResizeCursor
                     : OnRadiusEdge(levelPt) ? ResizeCursor
                     : handle != GrabRail.Handle.None ? CursorForHandle(handle)
                     : _waterHandleHovered ? VResizeCursor
                     : Cursor.Default;
+                return;
+            }
+
+            if (_handObjectDrag && !BeginHandDrag(levelPt))
+            {
                 return;
             }
 
@@ -1001,6 +1253,7 @@ namespace CtrDxEditor.Rendering
             // Capture loss (including the release path's own Capture(null)) can fire with nothing in
             // progress; skip the resets and completion callback unless a gesture is actually active.
             bool gestureActive = _dragging || _panning || _resizingRadius || _resizingTutorialText || _polylinePointDrag > 0
+                || _handJointDrag > 0 || _handBaseDrag
                 || _railDrag != GrabRail.Handle.None || _stripResizeDrag != SpikeResize.Handle.None
                 || _conveyorDrag != ConveyorGeometry.Handle.None
                 || _vinylHandleDrag != VinylGeometry.Handle.None || _rotating || _hookHovered || _waterDrag;
@@ -1009,7 +1262,10 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
-            bool editedDocument = _dragging || _resizingRadius || _resizingTutorialText || _polylinePointDrag > 0
+            bool handHandleEdited = (_handJointDrag > 0 || _handBaseDrag) && _handDragHasMoved;
+            bool editedDocument = (_dragging && (!_handObjectDrag || _handDragHasMoved))
+                || _resizingRadius || _resizingTutorialText || _polylinePointDrag > 0
+                || handHandleEdited
                 || _railDrag != GrabRail.Handle.None || _stripResizeDrag != SpikeResize.Handle.None
                 || _conveyorDrag != ConveyorGeometry.Handle.None
                 || _vinylHandleDrag != VinylGeometry.Handle.None || _rotating || _waterDrag;
@@ -1028,6 +1284,12 @@ namespace CtrDxEditor.Rendering
             _rotating = false;
             _rotationDragCenter = default;
             _polylinePointDrag = -1;
+            _handJointDrag = 0;
+            _handBaseDrag = false;
+            _handObjectDrag = false;
+            _handDragStartPointer = default;
+            _handDragStartTarget = default;
+            _handDragHasMoved = false;
             if (editedDocument)
             {
                 CompleteDocumentEdit?.Invoke();
@@ -1044,6 +1306,13 @@ namespace CtrDxEditor.Rendering
             SetDialKnobHovered(false); // nor the rotation knob
             SetVinylHandleHovered(VinylGeometry.Handle.None); // nor the vinyl handle glow
             ResetPolylineHover();
+            _handHoverJoint = 0;
+            if (_handSplitPreview is not null || _handHoverSegment != 0)
+            {
+                _handSplitPreview = null;
+                _handHoverSegment = 0;
+                InvalidateVisual();
+            }
             if (_waterHandleHovered)
             {
                 _waterHandleHovered = false;
@@ -1054,6 +1323,14 @@ namespace CtrDxEditor.Rendering
         /// <inheritdoc />
         protected override void OnKeyDown(KeyEventArgs e)
         {
+            if ((e.Key == Key.Delete || e.Key == Key.Back) && _handHoverJoint > 0)
+            {
+                DeleteSelectedHandSegment(_handHoverJoint);
+                _handHoverJoint = 0;
+                e.Handled = true;
+                return;
+            }
+
             if ((e.Key == Key.Delete || e.Key == Key.Back) && _polylineHoverPoint > 0)
             {
                 DeleteSelectedPolylineVertex(_polylineHoverPoint);
@@ -1069,7 +1346,27 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
+            // Holding Alt over a hand bone swaps the select-hover tint for the split preview without a move.
+            if (e.Key is Key.LeftAlt or Key.RightAlt)
+            {
+                UpdateHandSplitPreview(_lastHoverLevel, true);
+                UpdateHandHoverSegment(_lastHoverLevel, true);
+            }
+
             base.OnKeyDown(e);
+        }
+
+        /// <inheritdoc />
+        protected override void OnKeyUp(KeyEventArgs e)
+        {
+            // Releasing Alt hides the split preview and restores the select-hover tint under the cursor.
+            if (e.Key is Key.LeftAlt or Key.RightAlt)
+            {
+                UpdateHandSplitPreview(_lastHoverLevel, false);
+                UpdateHandHoverSegment(_lastHoverLevel, false);
+            }
+
+            base.OnKeyUp(e);
         }
 
         /// <inheritdoc />
