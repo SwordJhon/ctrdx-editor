@@ -27,6 +27,8 @@
     "Menu.View.ShowMovementPaths": "Show Movement Paths",
 
     "Panel.Objects": "Objects",
+    "Panel.Layers": "Layers",
+    "Panel.Language": "Tutorial language",
     "Panel.Properties": "Properties",
     "Panel.HandSegment": "Segment {0}",
     "Palette.SearchPlaceholder": "Search…",
@@ -135,6 +137,10 @@
     "Dialog.Validation.EditPrompt": "Would you like to edit it anyway?",
     "Dialog.Validation.EditProceed": "Edit anyway",
 
+    "Dialog.DeleteLayer.Header": "Delete layer?",
+    "Dialog.DeleteLayer.Body": "Delete the layer “{0}” and every object inside it?\nYou can undo this later.",
+    "Dialog.DeleteLayer.Confirm": "Delete",
+
     "Dialog.Unsaved.Header": "Unsaved changes",
     "Dialog.Unsaved.Body": "You have unsaved changes that will be lost.",
     "Dialog.Unsaved.Close": "Discard and close",
@@ -142,6 +148,16 @@
     "Dialog.Unsaved.New": "Discard and continue",
     "Dialog.Unsaved.Quit": "Discard and quit",
 
+    "Layer.Add": "Add new layer",
+    "Layer.Delete": "Delete active layer",
+    "Layer.MoveUp": "Move active layer up",
+    "Layer.MoveDown": "Move active layer down",
+    "Layer.ToggleExpand": "Expand or collapse all layers",
+    "Layer.Rename": "Rename layer",
+    "Layer.ObjectCount": "No. of objects in this layer",
+    "Tooltip.LayerVisibility": "Show or hide this layer",
+    "Tooltip.LayerLock": "Lock or unlock this layer",
+    "Tooltip.ObjectVisibility": "Show or hide this object",
     "Tooltip.ObjectLock": "Lock or unlock this object\nYou can also double click this object on the level canvas to lock/unlock it",
     "Tooltip.ObjectAnimationPreview": "Play or stop this object's animation",
 
@@ -268,6 +284,7 @@
     "Validation.NoCandy": "Level has no candy.",
     "Validation.NoTarget": "Level has no Om Nom.",
     "Validation.ResolutionTooSmall": "Level resolution is smaller than 320x480.",
+    "Validation.DuplicateSettingsLayer": "Multiple settings layers found; only the first one is used.",
     "Validation.DuplicateCandyNumber": "Duplicate candyNumber values found; grabs cannot tell those candies apart.",
     "Validation.GrabUnmatchedCandyNumber": "A grab references candyNumber '{0}', which no candy has, it will bind to the primary candy.",
     "Validation.GrabUnmatchedBulbNumber": "A grab binds to bulbNumber '{0}', which no light bulb has.",

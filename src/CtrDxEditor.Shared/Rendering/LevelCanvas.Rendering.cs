@@ -84,7 +84,7 @@ namespace CtrDxEditor.Rendering
             }
             DrawLevelContent(context, v, Bounds.Size, doc, sprites, drawGrid: true, grabRadiusPen: null, useAnimationPreview: true);
 
-            IReadOnlyList<LevelObject> objects = doc.Objects;
+            IReadOnlyList<LevelObject> objects = [.. doc.AllObjects.Where(obj => !IsHidden(obj))];
 
             GrabRenderer.DrawRadiusRings(context, v, objects, _palette.GrabRadius, _palette.BulbRadius, PreviewAnimationSeconds);
 
@@ -196,7 +196,7 @@ namespace CtrDxEditor.Rendering
 
             // Selection chrome (outline, edit handles, rotation dial) is hidden while the selected object is a
             // moving preview target — it isn't pickable, and drawing chrome at its stale home position would mislead.
-            LevelObject? selected = SelectedObject is { } s && !IsAnimatingInPreview(s) ? s : null;
+            LevelObject? selected = SelectedObject is { } s && !IsHidden(s) && !IsAnimatingInPreview(s) ? s : null;
             if (selected is not null)
             {
                 LevelBounds sb = LevelSceneRenderer.SelectionBounds(sprites, selected, ActiveCandySkin, ActiveOmNomSupport, doc.NightLevel);
@@ -727,7 +727,7 @@ namespace CtrDxEditor.Rendering
                 }
             }
 
-            IReadOnlyList<LevelObject> objects = doc.Objects;
+            IReadOnlyList<LevelObject> objects = [.. doc.AllObjects.Where(obj => !IsHidden(obj))];
             Rect opBounds = new(renderSize);
 
             // Light-bulb lit-glow halos: an additive Skia pass under the bottles (game's DrawLight order).
@@ -766,7 +766,7 @@ namespace CtrDxEditor.Rendering
             {
                 if (obj.Type == "grab")
                 {
-                    RopeVisual? rope = RopeRenderer.BuildRope(obj, objects, doc.TwoParts, ActiveRopeSkin);
+                    RopeVisual? rope = BuildRopeForVisibleGrab(obj, doc);
                     // The movable hook lights up while the selected grab's hook is hovered or being slid.
                     bool hookHighlighted =
                         (_railDrag == GrabRail.Handle.SlideHook || _hookHovered) && Equals(obj, SelectedObject);
@@ -830,6 +830,14 @@ namespace CtrDxEditor.Rendering
             {
                 GrabRenderer.DrawGrabRadiusRings(context, v, objects, grabRadiusPen);
             }
+        }
+
+        private RopeVisual? BuildRopeForVisibleGrab(LevelObject grab, LevelDocument doc)
+        {
+            RopeTarget target = RopeResolver.Resolve(grab, doc.AllObjects, doc.TwoParts);
+            return target.Target is { } boundObject && IsHidden(boundObject)
+                ? null
+                : RopeRenderer.BuildRope(grab, target, ActiveRopeSkin);
         }
 
         /// <summary>

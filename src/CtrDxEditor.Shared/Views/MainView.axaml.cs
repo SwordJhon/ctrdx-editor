@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -7,6 +8,8 @@ using Avalonia.Controls.Notifications;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using CtrDxEditor.Core.Document;
 using CtrDxEditor.Rendering;
@@ -23,6 +26,7 @@ namespace CtrDxEditor.Views
         private WindowNotificationManager? _notifications;
         private readonly LevelCanvas _canvas;
         private readonly TextBox _textEditor;
+        private readonly Image _rowDragPreview;
         private LevelObject? _editingText;
 
         /// <summary>Creates the main editor view and wires input gestures.</summary>
@@ -32,6 +36,7 @@ namespace CtrDxEditor.Views
             LevelCanvas canvas = this.FindControl<LevelCanvas>("Canvas")!;
             _canvas = canvas;
             _textEditor = this.FindControl<TextBox>("TextEditor")!;
+            _rowDragPreview = this.FindControl<Image>("RowDragPreview")!;
             _invalidateCanvas = canvas.InvalidateVisual;
             DataContextChanged += (_, _) => WireObjectMutated();
             WireObjectMutated();
@@ -59,6 +64,14 @@ namespace CtrDxEditor.Views
                 PointerReleasedEvent, _paletteDrag.OnPointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
             paletteList.AddHandler(
                 PointerCaptureLostEvent, _paletteDrag.OnPointerCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
+            // Swallow command-modified presses on the layer tree (tunnel, before the built-in selection
+            // logic) so Cmd/Ctrl+click cannot toggle the single selection off and deselect the row.
+            this.FindControl<TreeView>("LayersTree")!.AddHandler(
+                PointerPressedEvent, LayersTree_PointerPressed, RoutingStrategies.Tunnel);
+            // Observe every release in the view so a captured row drag also completes when released outside
+            // its source row. Before the movement threshold, row controls retain normal click/edit behavior.
+            AddHandler(PointerReleasedEvent, LayerRow_PointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
+            AddHandler(PointerReleasedEvent, ObjectRow_PointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
             // Delete and Space are focus-gated on the bubble path; the Cmd/Ctrl menu chords are handled
             // globally at the TopLevel (see MainView.Shortcuts.cs). Menu hint text is bound in XAML via
             // ShortcutHint.
@@ -93,6 +106,24 @@ namespace CtrDxEditor.Views
             {
                 SyncAnimationPreviewTimer();
             }
+
+            if (e.PropertyName == nameof(EditorViewModel.SelectedTreeItem))
+            {
+                Dispatcher.UIThread.Post(BringSelectedTreeItemIntoView, DispatcherPriority.Loaded);
+            }
+        }
+
+        private void BringSelectedTreeItemIntoView()
+        {
+            if (DataContext is not EditorViewModel { SelectedTreeItem: { } selected }
+                || this.FindControl<TreeView>("LayersTree") is not { } tree
+                || tree.GetVisualDescendants().OfType<TreeViewItem>()
+                    .FirstOrDefault(item => ReferenceEquals(item.DataContext, selected)) is not { } container)
+            {
+                return;
+            }
+
+            container.BringIntoView();
         }
 
         private void FocusCanvasAfterLevelLoaded()

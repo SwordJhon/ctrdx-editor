@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace CtrDxEditor.Core.Document
@@ -71,15 +72,27 @@ namespace CtrDxEditor.Core.Document
         private XElement Root => _doc.Root
             ?? throw new InvalidDataException("Level XML has no root <map> element.");
 
-        private XElement? Layer(string name)
+        /// <summary>Whether a layer name identifies the special settings layer.</summary>
+        /// <param name="name">The layer name to classify.</param>
+        /// <returns>True for <c>settings</c> in any casing.</returns>
+        public static bool IsSettingsLayerName(string? name)
         {
-            return Root.Elements("layer")
-            .FirstOrDefault(l => (string?)l.Attribute("name") == name);
+            return string.Equals(name, "settings", StringComparison.OrdinalIgnoreCase);
         }
 
-        private XElement? SettingsMap => Layer("settings")?.Element("map");
+        private static bool IsSettingsLayer(XElement layer)
+        {
+            return IsSettingsLayerName((string?)layer.Attribute("name"));
+        }
 
-        private XElement? GameDesign => Layer("settings")?.Element("gameDesign");
+        private XElement? SettingsLayer => Root.Elements("layer").FirstOrDefault(IsSettingsLayer);
+
+        /// <summary>The number of settings layers, matched without regard to casing.</summary>
+        public int SettingsLayerCount => Root.Elements("layer").Count(IsSettingsLayer);
+
+        private XElement? SettingsMap => SettingsLayer?.Element("map");
+
+        private XElement? GameDesign => SettingsLayer?.Element("gameDesign");
 
         /// <summary>The gameDesign settings element, or null when the document has none.</summary>
         public XElement? GameDesignElement => GameDesign;
@@ -127,15 +140,173 @@ namespace CtrDxEditor.Core.Document
         public LevelSettings Settings =>
             new(Width, Height, RopePhysicsSpeed, Special, TwoParts, NightLevel, UseMobilePhysics, Water, WaterSpeed);
 
-        /// <summary>The Objects layer element, or null when the document has none yet.</summary>
-        public XElement? ObjectsLayer => Layer("Objects");
+        /// <summary>All object layers (every <c>&lt;layer&gt;</c> except <c>settings</c>), in document order.</summary>
+        public IReadOnlyList<LevelLayer> Layers =>
+            [.. Root.Elements("layer")
+                .Where(l => !IsSettingsLayer(l))
+                .Select(l => new LevelLayer(l))];
 
-        /// <summary>Adds an object to the Objects layer, creating the layer when needed.</summary>
-        /// <param name="obj">The object to append.</param>
-        public void Add(LevelObject obj)
+        /// <summary>Appends a new empty object layer with the given name.</summary>
+        /// <param name="name">The new layer's name.</param>
+        /// <returns>The created layer wrapper.</returns>
+        public LevelLayer AddLayer(string name)
         {
-            XElement layer = ObjectsLayer ?? CreateObjectsLayer();
-            layer.Add(obj.Element);
+            XElement el = new("layer", new XAttribute("name", name));
+            Root.Add(el);
+            return new LevelLayer(el);
+        }
+
+        /// <summary>Removes an object layer and every object inside it.</summary>
+        /// <param name="layer">The layer to remove.</param>
+        public void RemoveLayer(LevelLayer layer)
+        {
+            if (!ReferenceEquals(layer.Element.Parent, Root))
+            {
+                return;
+            }
+
+            layer.Element.Remove();
+        }
+
+        /// <summary>Reorders an object layer among the other object layers, clamped to the valid range.</summary>
+        /// <param name="layer">The layer to move.</param>
+        /// <param name="delta">Positions to shift; negative moves earlier, positive later.</param>
+        public void MoveLayer(LevelLayer layer, int delta)
+        {
+            List<XElement> objectLayers = [.. Root.Elements("layer")
+                .Where(l => !IsSettingsLayer(l))];
+            int from = objectLayers.IndexOf(layer.Element);
+            if (from < 0)
+            {
+                return;
+            }
+
+            int to = Math.Clamp(from + delta, 0, objectLayers.Count - 1);
+            if (to == from)
+            {
+                return;
+            }
+
+            layer.Element.Remove();
+            if (to == 0)
+            {
+                objectLayers[0].AddBeforeSelf(layer.Element);
+            }
+            else
+            {
+                objectLayers[to <= from ? to - 1 : to].AddAfterSelf(layer.Element);
+            }
+        }
+
+        /// <summary>Appends an object to a specific layer.</summary>
+        /// <param name="obj">The object to add.</param>
+        /// <param name="target">The layer to add it to.</param>
+        public void Add(LevelObject obj, LevelLayer target)
+        {
+            if (!ReferenceEquals(target.Element.Parent, Root))
+            {
+                return;
+            }
+
+            target.Element.Add(obj.Element);
+        }
+
+        /// <summary>Moves an object out of its current layer and appends it to another.</summary>
+        /// <param name="obj">The object to move.</param>
+        /// <param name="target">The destination layer.</param>
+        public void MoveObject(LevelObject obj, LevelLayer target)
+        {
+            if (!ReferenceEquals(target.Element.Parent, Root))
+            {
+                return;
+            }
+
+            obj.Element.Remove();
+            target.Element.Add(obj.Element);
+        }
+
+        /// <summary>Trims and validates a candidate layer name.</summary>
+        /// <param name="name">The candidate name.</param>
+        /// <param name="normalized">The trimmed name when validation succeeds; otherwise an empty string.</param>
+        /// <param name="excluding">A layer to ignore in the uniqueness check (the one being renamed).</param>
+        /// <returns>True when the normalized name is XML-safe, non-empty, and unique.</returns>
+        public bool TryNormalizeLayerName(string? name, out string normalized, LevelLayer? excluding = null)
+        {
+            string candidate = name?.Trim() ?? "";
+            normalized = "";
+            if (candidate.Length == 0)
+            {
+                return false;
+            }
+
+            if (IsSettingsLayerName(candidate))
+            {
+                return false;
+            }
+
+            try
+            {
+                _ = XmlConvert.VerifyXmlChars(candidate);
+            }
+            catch (XmlException)
+            {
+                return false;
+            }
+
+            if (Layers.Any(layer =>
+                !ReferenceEquals(layer.Element, excluding?.Element) && layer.Name == candidate))
+            {
+                return false;
+            }
+
+            normalized = candidate;
+            return true;
+        }
+
+        /// <summary>True when a normalized layer name is valid and not already used by another object layer.</summary>
+        /// <param name="name">The candidate name.</param>
+        /// <param name="excluding">A layer to ignore in the uniqueness check (the one being renamed).</param>
+        /// <returns>Whether the name may be applied.</returns>
+        public bool IsLayerNameAvailable(string name, LevelLayer? excluding = null)
+        {
+            return TryNormalizeLayerName(name, out _, excluding);
+        }
+
+        /// <summary>Renames duplicate ordinary layers deterministically in document order.</summary>
+        /// <returns>True when at least one layer was renamed.</returns>
+        public bool NormalizeDuplicateLayerNames()
+        {
+            XElement[] ordinaryLayers = [.. Root.Elements("layer").Where(layer => !IsSettingsLayer(layer))];
+            HashSet<string> reservedNames = ordinaryLayers
+                .Select(layer => (string?)layer.Attribute("name") ?? string.Empty)
+                .ToHashSet(StringComparer.Ordinal);
+            HashSet<string> seenNames = Enumerable.Empty<string>().ToHashSet(StringComparer.Ordinal);
+            bool changed = false;
+
+            foreach (XElement layer in ordinaryLayers)
+            {
+                string originalName = (string?)layer.Attribute("name") ?? string.Empty;
+                if (seenNames.Add(originalName))
+                {
+                    continue;
+                }
+
+                int suffix = 2;
+                string candidate;
+                do
+                {
+                    candidate = $"{originalName}-{suffix}";
+                    suffix++;
+                }
+                while (reservedNames.Contains(candidate));
+
+                layer.SetAttributeValue("name", candidate);
+                _ = reservedNames.Add(candidate);
+                _ = seenNames.Add(candidate);
+                changed = true;
+            }
+
+            return changed;
         }
 
         /// <summary>Writes level-wide settings back into the settings layer and adjusts candy objects when split mode changes.</summary>
@@ -143,7 +314,7 @@ namespace CtrDxEditor.Core.Document
         public void UpdateSettings(LevelSettings settings)
         {
             bool wasTwoParts = TwoParts;
-            XElement settingsLayer = Layer("settings") ?? CreateSettingsLayer();
+            XElement settingsLayer = SettingsLayer ?? CreateSettingsLayer();
             XElement map = settingsLayer.Element("map") ?? AddChild(settingsLayer, "map");
             XElement gameDesign = settingsLayer.Element("gameDesign") ?? AddChild(settingsLayer, "gameDesign");
 
@@ -176,9 +347,51 @@ namespace CtrDxEditor.Core.Document
             obj.Element.Remove();
         }
 
-        /// <summary>Current editable objects in the Objects layer, in XML order.</summary>
-        public IReadOnlyList<LevelObject> Objects =>
-            ObjectsLayer is null ? [] : [.. ObjectsLayer.Elements().Select(e => new LevelObject(e))];
+        /// <summary>
+        /// All editable objects across every object layer, flattened in document order. Read-only aggregate
+        /// used for level-wide concerns (cardinality, palette gating); it is not a layer and nothing writes
+        /// to it. Writes go through a specific <see cref="LevelLayer"/>.
+        /// </summary>
+        public IReadOnlyList<LevelObject> AllObjects =>
+            [.. Layers.SelectMany(l => l.Objects)];
+
+        /// <summary>Resolves a structural coordinate to the live object it points at, or null when out of range.</summary>
+        /// <param name="reference">The coordinate to resolve.</param>
+        /// <returns>The live object, or null.</returns>
+        public LevelObject? Resolve(ObjectRef reference)
+        {
+            IReadOnlyList<LevelLayer> layers = Layers;
+            if (reference.LayerIndex < 0 || reference.LayerIndex >= layers.Count)
+            {
+                return null;
+            }
+
+            IReadOnlyList<LevelObject> objects = layers[reference.LayerIndex].Objects;
+            return reference.IndexInLayer >= 0 && reference.IndexInLayer < objects.Count
+                ? objects[reference.IndexInLayer]
+                : null;
+        }
+
+        /// <summary>Finds the structural coordinate of a live object, or null when it is not in any layer.</summary>
+        /// <param name="obj">The object to locate.</param>
+        /// <returns>Its coordinate, or null.</returns>
+        public ObjectRef? RefOf(LevelObject obj)
+        {
+            IReadOnlyList<LevelLayer> layers = Layers;
+            for (int layerIndex = 0; layerIndex < layers.Count; layerIndex++)
+            {
+                IReadOnlyList<LevelObject> objects = layers[layerIndex].Objects;
+                for (int indexInLayer = 0; indexInLayer < objects.Count; indexInLayer++)
+                {
+                    if (Equals(objects[indexInLayer], obj))
+                    {
+                        return new ObjectRef(layerIndex, indexInLayer);
+                    }
+                }
+            }
+
+            return null;
+        }
 
         /// <summary>
         /// Serializes game level XML, preserving the original declaration and unknown data while omitting
@@ -253,42 +466,36 @@ namespace CtrDxEditor.Core.Document
             return child;
         }
 
-        private XElement CreateObjectsLayer()
-        {
-            XElement layer = new("layer", new XAttribute("name", "Objects"));
-            Root.Add(layer);
-            return layer;
-        }
-
         private void ConvertCandyForTwoParts(bool twoParts, int width, int height)
         {
-            XElement objects = ObjectsLayer ?? CreateObjectsLayer();
+            XElement[] objectLayers = [.. Layers.Select(layer => layer.Element)];
             if (twoParts)
             {
-                XElement? candy = objects.Elements("candy").FirstOrDefault();
-                XElement? candyL = objects.Elements("candyL").FirstOrDefault();
+                XElement? candy = objectLayers.SelectMany(layer => layer.Elements("candy")).FirstOrDefault();
+                XElement? candyL = objectLayers.SelectMany(layer => layer.Elements("candyL")).FirstOrDefault();
                 if (candyL is null && candy is not null)
                 {
                     candy.Name = "candyL";
                     candyL = candy;
                 }
 
-                if (candyL is not null && !objects.Elements("candyR").Any())
+                bool hasCandyR = objectLayers.SelectMany(layer => layer.Elements("candyR")).Any();
+                if (candyL?.Parent is XElement candyLayer && !hasCandyR)
                 {
                     XElement candyR = new("candyR",
                         new XAttribute("x", (width / 2).ToString(CultureInfo.InvariantCulture)),
                         new XAttribute("y", (height / 2).ToString(CultureInfo.InvariantCulture)));
-                    objects.Add(candyR);
+                    candyLayer.Add(candyR);
                 }
             }
             else
             {
-                if (objects.Elements("candyL").FirstOrDefault() is XElement candyL)
+                if (objectLayers.SelectMany(layer => layer.Elements("candyL")).FirstOrDefault() is XElement candyL)
                 {
                     candyL.Name = "candy";
                 }
 
-                foreach (XElement candyR in objects.Elements("candyR").ToList())
+                foreach (XElement candyR in objectLayers.SelectMany(layer => layer.Elements("candyR")).ToList())
                 {
                     candyR.Remove();
                 }

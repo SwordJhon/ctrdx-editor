@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -19,6 +20,14 @@ namespace CtrDxEditor.Rendering
         /// <summary>Avalonia property backing <see cref="Document"/>.</summary>
         public static readonly StyledProperty<LevelDocument?> DocumentProperty =
             AvaloniaProperty.Register<LevelCanvas, LevelDocument?>(nameof(Document));
+
+        /// <summary>Avalonia property backing <see cref="HiddenObjects"/>.</summary>
+        public static readonly StyledProperty<IReadOnlySet<LevelObject>?> HiddenObjectsProperty =
+            AvaloniaProperty.Register<LevelCanvas, IReadOnlySet<LevelObject>?>(nameof(HiddenObjects));
+
+        /// <summary>Avalonia property backing <see cref="LockedOutObjects"/>.</summary>
+        public static readonly StyledProperty<IReadOnlySet<LevelObject>?> LockedOutObjectsProperty =
+            AvaloniaProperty.Register<LevelCanvas, IReadOnlySet<LevelObject>?>(nameof(LockedOutObjects));
 
         /// <summary>Avalonia property backing <see cref="Sprites"/>.</summary>
         public static readonly StyledProperty<SpriteCache?> SpritesProperty =
@@ -110,8 +119,11 @@ namespace CtrDxEditor.Rendering
 
         static LevelCanvas()
         {
+            _ = LockedOutObjectsProperty.Changed.AddClassHandler<LevelCanvas>((canvas, _) => canvas.ClearLockedOutInteraction());
+            _ = SelectedObjectProperty.Changed.AddClassHandler<LevelCanvas>((canvas, _) => canvas.ClearLockedOutInteraction());
+            _ = LockedObjectProperty.Changed.AddClassHandler<LevelCanvas>((canvas, _) => canvas.ClearLockedOutInteraction());
             AffectsRender<LevelCanvas>(
-                DocumentProperty, SpritesProperty, ViewProperty, SnapEnabledProperty,
+                DocumentProperty, HiddenObjectsProperty, SpritesProperty, ViewProperty, SnapEnabledProperty,
                 SelectedObjectProperty, LockedObjectProperty,
                 ShowHitboxesProperty, ShowForceFieldsProperty, ShowMovementPathsProperty,
                 ActiveRopeSkinProperty, ActiveBackgroundProperty, ActiveCandySkinProperty,
@@ -121,6 +133,12 @@ namespace CtrDxEditor.Rendering
 
         /// <summary>The loaded level document to render and edit.</summary>
         public LevelDocument? Document { get => GetValue(DocumentProperty); set => SetValue(DocumentProperty, value); }
+
+        /// <summary>Objects excluded from rendering and interaction by layer, object, or locale visibility.</summary>
+        public IReadOnlySet<LevelObject>? HiddenObjects { get => GetValue(HiddenObjectsProperty); set => SetValue(HiddenObjectsProperty, value); }
+
+        /// <summary>Objects that render normally but are excluded from hit-testing because their layer is locked.</summary>
+        public IReadOnlySet<LevelObject>? LockedOutObjects { get => GetValue(LockedOutObjectsProperty); set => SetValue(LockedOutObjectsProperty, value); }
 
         /// <summary>Sprite cache used to render object art.</summary>
         public SpriteCache? Sprites { get => GetValue(SpritesProperty); set => SetValue(SpritesProperty, value); }
@@ -225,6 +243,28 @@ namespace CtrDxEditor.Rendering
         /// <summary>Callback raised after a direct canvas edit ends, so the view model can commit undo state.</summary>
         public Action? CompleteDocumentEdit { get; set; }
 
+        private bool IsHidden(LevelObject obj)
+        {
+            return HiddenObjects?.Contains(obj) == true;
+        }
+
+        private bool IsLockedOut(LevelObject obj)
+        {
+            return LockedOutObjects?.Contains(obj) == true;
+        }
+
+        private void ClearLockedOutInteraction()
+        {
+            if (SelectedObject is { } selected && IsLockedOut(selected))
+            {
+                SelectedObject = null;
+            }
+            if (LockedObject is { } locked && IsLockedOut(locked))
+            {
+                LockedObject = null;
+            }
+        }
+
         /// <summary>True while dragging the selected object (or a grab via its move-bar) to a new position.</summary>
         private bool _dragging;
 
@@ -262,7 +302,7 @@ namespace CtrDxEditor.Rendering
         private readonly GhostPreviewState _ghostPreview = new();
 
         /// <summary>Screen-space state-selector hit targets populated while the ghost badge is drawn.</summary>
-        private readonly System.Collections.Generic.List<(Rect Rect, GhostMorph Morph)> _ghostIconHits = [];
+        private readonly List<(Rect Rect, GhostMorph Morph)> _ghostIconHits = [];
 
         /// <summary>
         /// Which movable-rail handle the current drag is manipulating (slide the hook or resize an end);

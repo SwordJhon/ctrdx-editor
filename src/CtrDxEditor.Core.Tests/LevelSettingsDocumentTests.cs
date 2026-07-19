@@ -1,3 +1,5 @@
+using System.Linq;
+
 using CtrDxEditor.Core.Document;
 
 using Xunit;
@@ -49,6 +51,46 @@ namespace CtrDxEditor.Core.Tests
             Assert.False(doc.NightLevel);
         }
 
+        /// <summary>Settings-layer recognition matches the game's case-insensitive lookup.</summary>
+        [Fact]
+        public void MixedCaseSettingsLayerSuppliesMetadataAndIsNotAnObjectLayer()
+        {
+            LevelDocument doc = LevelDocument.Parse("""
+                <map>
+                    <layer name="SeTTings">
+                        <map gridSize="16" width="640" height="960" />
+                        <gameDesign ropePhysicsSpeed="2" special="4" />
+                    </layer>
+                    <layer name="Objects"><candy x="1" y="2" /></layer>
+                </map>
+                """);
+
+            Assert.Equal(16, doc.GridSize);
+            Assert.Equal(640, doc.Width);
+            Assert.Equal(960, doc.Height);
+            Assert.Equal(2f, doc.RopePhysicsSpeed);
+            Assert.Equal(4, doc.Special);
+            Assert.Equal("Objects", Assert.Single(doc.Layers).Name);
+            _ = Assert.Single(doc.AllObjects);
+        }
+
+        /// <summary>When malformed XML contains several settings layers, only the first supplies metadata.</summary>
+        [Fact]
+        public void FirstSettingsLayerIsAuthoritativeRegardlessOfCase()
+        {
+            LevelDocument doc = LevelDocument.Parse("""
+                <map>
+                    <layer name="Settings"><map width="320" height="480" /></layer>
+                    <layer name="SETTINGS"><map width="999" height="999" /></layer>
+                    <layer name="Objects" />
+                </map>
+                """);
+
+            Assert.Equal(320, doc.Width);
+            Assert.Equal(480, doc.Height);
+            Assert.Equal("Objects", Assert.Single(doc.Layers).Name);
+        }
+
         /// <summary>A new level starts with an empty Objects layer and serializes its bools lowercase, the way real maps store them.</summary>
         [Fact]
         public void CreateNewProducesSettingsAndEmptyObjectsLayer()
@@ -62,8 +104,8 @@ namespace CtrDxEditor.Core.Tests
             Assert.Equal(480, doc.Height);
             Assert.True(doc.TwoParts);
             Assert.True(doc.NightLevel);
-            Assert.Empty(doc.Objects);
-            Assert.NotNull(doc.ObjectsLayer);
+            Assert.Empty(doc.AllObjects);
+            Assert.Equal("Objects", Assert.Single(doc.Layers).Name);
 
             // Bools are serialized lowercase to match real maps.
             Assert.Contains("twoParts=\"true\"", doc.Save());
@@ -102,7 +144,7 @@ namespace CtrDxEditor.Core.Tests
 
             doc.UpdateSettings(new LevelSettings(320, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
 
-            Assert.Collection(doc.Objects,
+            Assert.Collection(doc.AllObjects,
                 candy =>
                 {
                     Assert.Equal("candy", candy.Type);
@@ -161,7 +203,7 @@ namespace CtrDxEditor.Core.Tests
 
             doc.UpdateSettings(new LevelSettings(640, 480, 1.0f, 0, TwoParts: true, NightLevel: false));
 
-            Assert.Collection(doc.Objects,
+            Assert.Collection(doc.AllObjects,
                 candyL =>
                 {
                     Assert.Equal("candyL", candyL.Type);
@@ -175,6 +217,31 @@ namespace CtrDxEditor.Core.Tests
                     Assert.Equal(320, candyR.X);
                     Assert.Equal(240, candyR.Y);
                 });
+        }
+
+        /// <summary>Two-part conversion follows candy objects into non-primary layers and keeps the pair together.</summary>
+        [Fact]
+        public void TwoPartConversionPreservesCandysSourceLayer()
+        {
+            LevelDocument doc = LevelDocument.Parse("""
+            <map>
+                <layer name="settings">
+                    <map gridSize="32" width="640" height="480" />
+                    <gameDesign twoParts="false" />
+                </layer>
+                <layer name="Foreground"><target x="3" y="3" /></layer>
+                <layer name="Gameplay"><candy x="101" y="170" /></layer>
+            </map>
+            """);
+
+            doc.UpdateSettings(new LevelSettings(640, 480, 1.0f, 0, TwoParts: true, NightLevel: false));
+
+            Assert.Equal(["target"], doc.Layers[0].Objects.Select(obj => obj.Type));
+            Assert.Equal(["candyL", "candyR"], doc.Layers[1].Objects.Select(obj => obj.Type));
+
+            doc.UpdateSettings(new LevelSettings(640, 480, 1.0f, 0, TwoParts: false, NightLevel: false));
+
+            Assert.Equal(["candy"], doc.Layers[1].Objects.Select(obj => obj.Type));
         }
     }
 }
