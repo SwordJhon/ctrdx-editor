@@ -1,6 +1,8 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Xml.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -209,6 +211,57 @@ namespace CtrDxEditor.Tests
             Assert.Contains("DispatcherPriority.Normal", codeBehind, StringComparison.Ordinal);
         }
 
+        /// <summary>The inline close button cancels layer rename just like Escape.</summary>
+        [Fact]
+        public void LayerRenameEditorHasCloseButtonThatCancelsRename()
+        {
+            XDocument view = XDocument.Load(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml"));
+            string codeBehind = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.Commands.cs"));
+            XElement editor = view.Descendants()
+                .Single(element => element.Name.LocalName == "TextBox"
+                    && (string?)element.Attribute("Classes.layer-name-editor") == "True");
+            XElement closeButton = editor.Descendants()
+                .Single(element => element.Name.LocalName == "Button");
+            XElement closeIcon = closeButton.Descendants()
+                .Single(element => element.Name.LocalName == "MaterialIcon");
+
+            Assert.Equal("LayerRenameCancel_Click", (string?)closeButton.Attribute("Click"));
+            Assert.Equal("False", (string?)closeButton.Attribute("Focusable"));
+            Assert.Equal("{loc:Tr Dialog.Common.Cancel}", (string?)closeButton.Attribute("ToolTip.Tip"));
+            Assert.Equal("Close", (string?)closeIcon.Attribute("Kind"));
+            Assert.Contains("private void CancelLayerRename(LayerViewModel row)", codeBehind, StringComparison.Ordinal);
+            Assert.True(
+                codeBehind.Split("CancelLayerRename(row);", StringSplitOptions.None).Length >= 3,
+                "Expected both Escape and the close button to use the shared cancellation path.");
+        }
+
+        /// <summary>Rejected inline layer names explain the failure and reopen the editor for correction.</summary>
+        [Fact]
+        public void InvalidLayerRenameShowsWarningAndResumesEditing()
+        {
+            string codeBehind = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.Commands.cs"));
+
+            Assert.Contains("private async void CommitLayerRename", codeBehind, StringComparison.Ordinal);
+            Assert.Contains("_layerRenameCommitInProgress", codeBehind, StringComparison.Ordinal);
+            Assert.Contains("MessageDialog warning = new()", codeBehind, StringComparison.Ordinal);
+            Assert.Contains("warning.ShowAsync();", codeBehind, StringComparison.Ordinal);
+            Assert.Contains("BeginLayerRename(row, attemptedName);", codeBehind, StringComparison.Ordinal);
+        }
+
+        /// <summary>Message dialogs use normal headers unless the caller explicitly marks an error.</summary>
+        [Fact]
+        public void MessageDialogDangerHeaderIsOptIn()
+        {
+            string view = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MessageDialog.axaml"));
+            string dialogCode = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MessageDialog.axaml.cs"));
+            string contentSetup = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "ContentSetupDialog.axaml.cs"));
+
+            Assert.Contains("Classes.danger=\"{Binding IsDanger}\"", view, StringComparison.Ordinal);
+            Assert.Contains("Selector=\"TextBlock.dialog-header.danger\"", view, StringComparison.Ordinal);
+            Assert.Contains("public bool IsDanger", dialogCode, StringComparison.Ordinal);
+            Assert.Contains("IsDanger = true", contentSetup, StringComparison.Ordinal);
+        }
+
         /// <summary>Object labels keep a readable gap after their visibility control.</summary>
         [Fact]
         public void ObjectVisibilityIconHasNameSpacing()
@@ -216,6 +269,57 @@ namespace CtrDxEditor.Tests
             string view = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml"));
 
             Assert.Contains("Classes.object-name=\"True\" Margin=\"6,0,0,0\"", view, StringComparison.Ordinal);
+        }
+
+        /// <summary>Layer and object actions occupy matching lock and secondary-action slots.</summary>
+        [Fact]
+        public void LayerAndObjectActionButtonsUseAlignedSlots()
+        {
+            XDocument view = XDocument.Load(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml"));
+            XElement Button(string handler)
+            {
+                return view.Descendants()
+                    .Single(element => element.Name.LocalName == "Button"
+                        && (string?)element.Attribute("Click") == handler);
+            }
+
+            XElement layerLock = Button("LayerLockToggle_Click");
+            XElement layerRename = Button("LayerRename_Click");
+            XElement objectLock = Button("ObjectLock_Click");
+            XElement objectAnimation = Button("ObjectAnimationPreview_Click");
+            XElement layerStyle = view.Descendants()
+                .Single(element => element.Name.LocalName == "Style"
+                    && (string?)element.Attribute("Selector") == "Border.layer-row");
+            XElement objectStyle = view.Descendants()
+                .Single(element => element.Name.LocalName == "Style"
+                    && (string?)element.Attribute("Selector") == "Border.object-row");
+            static string? Padding(XElement style)
+            {
+                return (string?)style.Elements()
+                    .Single(element => (string?)element.Attribute("Property") == "Padding")
+                    .Attribute("Value");
+            }
+
+            Assert.Equal("4", (string?)layerLock.Attribute("Grid.Column"));
+            Assert.Equal("3", (string?)layerRename.Attribute("Grid.Column"));
+            Assert.Equal("3", (string?)objectLock.Attribute("Grid.Column"));
+            Assert.Equal("2", (string?)objectAnimation.Attribute("Grid.Column"));
+            Assert.Equal("Auto,*,Auto,Auto,Auto", (string?)layerLock.Parent!.Attribute("ColumnDefinitions"));
+            Assert.Equal("Auto,*,Auto,Auto", (string?)objectLock.Parent!.Attribute("ColumnDefinitions"));
+            Assert.Equal("6,2,2,2", Padding(layerStyle));
+            Assert.Equal("2,1", Padding(objectStyle));
+            Assert.All([layerLock, layerRename, objectLock, objectAnimation], button =>
+            {
+                Assert.Equal("20", (string?)button.Attribute("Width"));
+                Assert.Equal("20", (string?)button.Attribute("Height"));
+                Assert.Equal("2,0", (string?)button.Attribute("Margin"));
+            });
+            Assert.All(layerRename.Descendants().Concat(objectAnimation.Descendants())
+                .Where(element => element.Name.LocalName == "MaterialIcon"), icon =>
+            {
+                Assert.Equal("14", (string?)icon.Attribute("Width"));
+                Assert.Equal("14", (string?)icon.Attribute("Height"));
+            });
         }
 
         /// <summary>Layer locking stays available inline without retaining object or layer context menus.</summary>
@@ -272,6 +376,19 @@ namespace CtrDxEditor.Tests
             Assert.Contains("nameof(EditorViewModel.SelectedTreeItem)", viewCodeBehind, StringComparison.Ordinal);
             Assert.Contains("Dispatcher.UIThread.Post(BringSelectedTreeItemIntoView", viewCodeBehind, StringComparison.Ordinal);
             Assert.Contains("container.BringIntoView();", viewCodeBehind, StringComparison.Ordinal);
+        }
+
+        /// <summary>Locked-layer objects cannot retain or acquire the TreeView selection highlight.</summary>
+        [Fact]
+        public void LockedLayerObjectsCannotKeepTreeSelectionHighlight()
+        {
+            string view = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml"));
+            string viewCodeBehind = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml.cs"));
+
+            Assert.Contains("SelectionChanged=\"LayersTree_SelectionChanged\"", view, StringComparison.Ordinal);
+            Assert.Contains("nameof(EditorViewModel.EffectivelyLockedObjects)", viewCodeBehind, StringComparison.Ordinal);
+            Assert.Contains("ClearLockedTreeSelection();", viewCodeBehind, StringComparison.Ordinal);
+            Assert.Contains("tree.SelectedItem = null;", viewCodeBehind, StringComparison.Ordinal);
         }
 
         private static string SourcePath(params string[] parts)
