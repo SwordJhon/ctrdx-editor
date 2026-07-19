@@ -32,6 +32,18 @@ namespace CtrDxEditor.Views
         /// <summary>Redo the last undone edit.</summary>
         Redo,
 
+        /// <summary>Select every object in the active layer.</summary>
+        SelectAll,
+
+        /// <summary>Copy the current object selection.</summary>
+        Copy,
+
+        /// <summary>Cut the current object selection.</summary>
+        Cut,
+
+        /// <summary>Paste copied objects at the canvas target.</summary>
+        Paste,
+
         /// <summary>Zoom the canvas in.</summary>
         ZoomIn,
 
@@ -81,6 +93,10 @@ namespace CtrDxEditor.Views
                 Key.Z when !shift => EditorShortcut.Undo,
                 Key.Z when shift => EditorShortcut.Redo,
                 Key.Y when !isMacOS => EditorShortcut.Redo,
+                Key.A when !shift => EditorShortcut.SelectAll,
+                Key.C when !shift => EditorShortcut.Copy,
+                Key.X when !shift => EditorShortcut.Cut,
+                Key.V when !shift => EditorShortcut.Paste,
                 Key.OemPlus or Key.Add => EditorShortcut.ZoomIn,
                 Key.OemMinus or Key.Subtract => EditorShortcut.ZoomOut,
                 Key.D0 or Key.NumPad0 => EditorShortcut.ZoomFit,

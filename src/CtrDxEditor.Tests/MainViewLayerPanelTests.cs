@@ -344,10 +344,26 @@ namespace CtrDxEditor.Tests
             string view = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml"));
             string codeBehind = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.Commands.cs"));
 
-            Assert.Contains("IsEnabled=\"{Binding CanDeleteActiveLayer}\"", view, StringComparison.Ordinal);
+            Assert.Contains("IsEnabled=\"{Binding CanDeleteSelectedLayers}\"", view, StringComparison.Ordinal);
             Assert.Contains("Click=\"LayerRename_Click\" ToolTip.Tip=\"{loc:Tr Layer.Rename}\"", view, StringComparison.Ordinal);
             Assert.Contains("IsEnabled=\"{Binding !IsLocked}\"", view, StringComparison.Ordinal);
             Assert.Contains("if (row.IsLocked)", codeBehind, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// The layer toolbar exposes a localized merge action whose enabled state follows selection
+        /// eligibility and whose click route delegates the document mutation to the editor view model.
+        /// </summary>
+        [Fact]
+        public void MergeSelectedLayersButtonUsesCapabilityAndViewModelCommand()
+        {
+            string view = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml"));
+            string codeBehind = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.Commands.cs"));
+
+            Assert.Contains("IsEnabled=\"{Binding CanMergeSelectedLayers}\"", view, StringComparison.Ordinal);
+            Assert.Contains("ToolTip.Tip=\"{loc:Tr Layer.Merge}\"", view, StringComparison.Ordinal);
+            Assert.Contains("Click=\"LayerMergeSelected_Click\"", view, StringComparison.Ordinal);
+            Assert.Contains("vm.MergeSelectedLayers();", codeBehind, StringComparison.Ordinal);
         }
 
         /// <summary>Startup bindings hide document-only controls and capability-gate layer actions.</summary>
@@ -360,9 +376,9 @@ namespace CtrDxEditor.Tests
             Assert.True(
                 view.Split("IsVisible=\"{Binding HasDocument, FallbackValue=False}\"", StringSplitOptions.None).Length >= 3,
                 "Expected both palette search and layer actions to stay hidden before a document loads.");
-            Assert.Contains("IsEnabled=\"{Binding CanDeleteActiveLayer}\"", view, StringComparison.Ordinal);
-            Assert.Contains("IsEnabled=\"{Binding CanMoveActiveLayerUp}\"", view, StringComparison.Ordinal);
-            Assert.Contains("IsEnabled=\"{Binding CanMoveActiveLayerDown}\"", view, StringComparison.Ordinal);
+            Assert.Contains("IsEnabled=\"{Binding CanDeleteSelectedLayers}\"", view, StringComparison.Ordinal);
+            Assert.Contains("IsEnabled=\"{Binding CanMoveSelectedLayersUp}\"", view, StringComparison.Ordinal);
+            Assert.Contains("IsEnabled=\"{Binding CanMoveSelectedLayersDown}\"", view, StringComparison.Ordinal);
             Assert.Contains("SelectedIndex=\"{Binding DisplayLocaleIndex, Mode=TwoWay}\"", view, StringComparison.Ordinal);
             Assert.DoesNotContain("SelectedItem=\"{Binding DisplayLocale, Mode=TwoWay}\"", view, StringComparison.Ordinal);
         }
@@ -378,6 +394,30 @@ namespace CtrDxEditor.Tests
             Assert.Contains("container.BringIntoView();", viewCodeBehind, StringComparison.Ordinal);
         }
 
+        /// <summary>Removing the final selected tree row also clears the corresponding model selection.</summary>
+        [Fact]
+        public void EmptyTreeSelectionClearsModelSelections()
+        {
+            string viewCodeBehind = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml.cs"));
+            string normalized = string.Join('\n', viewCodeBehind.Split('\n').Select(line => line.Trim()));
+
+            const string clearBranch = "else\n{\nvm.ClearLayerSelection();\nvm.Selection.Clear();\nvm.RaiseSelectedObjectChanged();\n}";
+            Assert.Contains(clearBranch, normalized, StringComparison.Ordinal);
+        }
+
+        /// <summary>Edit-menu and keyboard select-all routes use the document-wide view-model command.</summary>
+        [Fact]
+        public void SelectAllEntryPointsUseDocumentWideSelection()
+        {
+            string commands = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.Commands.cs"));
+            string shortcuts = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.Shortcuts.cs"));
+
+            Assert.Contains("vm.SelectAllObjects();", commands, StringComparison.Ordinal);
+            Assert.Contains("selectVm.SelectAllObjects();", shortcuts, StringComparison.Ordinal);
+            Assert.DoesNotContain("SelectAllInActiveLayer", commands, StringComparison.Ordinal);
+            Assert.DoesNotContain("SelectAllInActiveLayer", shortcuts, StringComparison.Ordinal);
+        }
+
         /// <summary>Locked-layer objects cannot retain or acquire the TreeView selection highlight.</summary>
         [Fact]
         public void LockedLayerObjectsCannotKeepTreeSelectionHighlight()
@@ -389,6 +429,33 @@ namespace CtrDxEditor.Tests
             Assert.Contains("nameof(EditorViewModel.EffectivelyLockedObjects)", viewCodeBehind, StringComparison.Ordinal);
             Assert.Contains("ClearLockedTreeSelection();", viewCodeBehind, StringComparison.Ordinal);
             Assert.Contains("tree.SelectedItem = null;", viewCodeBehind, StringComparison.Ordinal);
+        }
+
+        /// <summary>Blank tree and canvas clicks collapse a multi-layer selection to its active layer.</summary>
+        [Fact]
+        public void BlankClickCollapsesMultiLayerSelection()
+        {
+            string view = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml"));
+            string codeBehind = File.ReadAllText(SourcePath("CtrDxEditor.Shared", "Views", "MainView.axaml.cs"));
+
+            Assert.Contains("PointerPressed=\"LayersTree_PointerPressed\"", view, StringComparison.Ordinal);
+            Assert.Contains(
+                "Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed",
+                codeBehind,
+                StringComparison.Ordinal);
+            Assert.Contains("source.GetVisualAncestors().Prepend(source)", codeBehind, StringComparison.Ordinal);
+            Assert.Contains("visual is TreeViewItem or ScrollBar", codeBehind, StringComparison.Ordinal);
+            Assert.Contains("if (vm.CollapseLayerSelectionToActive())", codeBehind, StringComparison.Ordinal);
+            Assert.Contains("e.Handled = true;", codeBehind, StringComparison.Ordinal);
+
+            int clearCase = codeBehind.IndexOf("case LevelCanvas.SelectionRequestKind.Clear:", StringComparison.Ordinal);
+            int clearBreak = codeBehind.IndexOf("break;", clearCase, StringComparison.Ordinal);
+            Assert.True(clearCase >= 0 && clearBreak > clearCase);
+            string clearBranch = codeBehind[clearCase..clearBreak];
+            int collapse = clearBranch.IndexOf("vm.CollapseLayerSelectionToActive()", StringComparison.Ordinal);
+            int clear = clearBranch.IndexOf("vm.Selection.Clear();", StringComparison.Ordinal);
+            Assert.True(collapse >= 0 && clear > collapse);
+            Assert.Contains("if (!vm.CollapseLayerSelectionToActive())", clearBranch, StringComparison.Ordinal);
         }
 
         private static string SourcePath(params string[] parts)

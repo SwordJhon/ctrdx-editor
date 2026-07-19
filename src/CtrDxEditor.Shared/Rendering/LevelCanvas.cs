@@ -152,6 +152,19 @@ namespace CtrDxEditor.Rendering
         /// <summary>The currently selected object, if any.</summary>
         public LevelObject? SelectedObject { get => GetValue(SelectedObjectProperty); set => SetValue(SelectedObjectProperty, value); }
 
+        /// <summary>Every selected object. Drives multi-object outlines and group move.</summary>
+        public IReadOnlySet<LevelObject> SelectedObjects { get; set; } = new HashSet<LevelObject>();
+
+        /// <summary>The primary selected object; drives specialized handles and the property panel.</summary>
+        public LevelObject? PrimaryObject
+        {
+            get => SelectedObject;
+            set => SelectedObject = value;
+        }
+
+        /// <summary>True when exactly one object is selected; specialized handles require this.</summary>
+        private bool IsSingleSelection => SelectedObjects.Count == 1;
+
         /// <summary>The object locked for exclusive interaction, if any.</summary>
         public LevelObject? LockedObject { get => GetValue(LockedObjectProperty); set => SetValue(LockedObjectProperty, value); }
 
@@ -209,8 +222,30 @@ namespace CtrDxEditor.Rendering
         /// <summary>Callback used to toggle the locked object from canvas gestures.</summary>
         public Action<LevelObject?>? ToggleLock { get; set; }
 
+        /// <summary>How the canvas asks the view model to change selection.</summary>
+        public enum SelectionRequestKind
+        {
+            /// <summary>Replace the current selection.</summary>
+            Replace,
+
+            /// <summary>Toggle one object in the current selection.</summary>
+            Toggle,
+
+            /// <summary>Clear the current selection.</summary>
+            Clear,
+        }
+
+        /// <summary>A selection change the canvas requests; the view model applies it to <see cref="EditorSelection"/>.</summary>
+        public readonly record struct SelectionRequest(SelectionRequestKind Kind, LevelObject? Target);
+
+        /// <summary>Raised when the canvas wants the view model to change selection.</summary>
+        public Action<SelectionRequest>? SelectionRequested { get; set; }
+
         /// <summary>Callback raised when a canvas drag moves the selected object, so bound views can refresh.</summary>
         public Action? SelectedObjectMoved { get; set; }
+
+        /// <summary>Raised when a command-drag should duplicate the selection in place before moving it.</summary>
+        public Action? DuplicateRequested { get; set; }
 
         /// <summary>Raised with a segment index when a hand joint is pressed, so the panel can expand it.</summary>
         public Action<int>? HandSegmentActivated { get; set; }
@@ -235,6 +270,15 @@ namespace CtrDxEditor.Rendering
             Vec2 tl = View.LevelToScreen(new Vec2(b.X, b.Y));
             Vec2 br = View.LevelToScreen(new Vec2(b.X + b.W, b.Y + b.H));
             return new Rect(tl.X, tl.Y, br.X - tl.X, br.Y - tl.Y);
+        }
+
+        /// <summary>Returns the last hovered level point, or the viewport centre when no hover is available.</summary>
+        public (int X, int Y) PasteTargetLevelPoint()
+        {
+            Vec2 point = _lastHoverLevel != default
+                ? _lastHoverLevel
+                : View.ScreenToLevel(new Vec2(Bounds.Width / 2, Bounds.Height / 2));
+            return ((int)Math.Round(point.X), (int)Math.Round(point.Y));
         }
 
         /// <summary>Callback raised before a direct canvas edit begins, so the view model can capture undo state.</summary>
@@ -267,6 +311,22 @@ namespace CtrDxEditor.Rendering
 
         /// <summary>True while dragging the selected object (or a grab via its move-bar) to a new position.</summary>
         private bool _dragging;
+
+        /// <summary>Original coordinates for every object participating in the current group drag.</summary>
+        private readonly List<(LevelObject Obj, int X, int Y)> _groupDragOrigins = [];
+
+        /// <summary>True while a command-modified press awaits enough pointer travel to become duplication.</summary>
+        private bool _pendingDupDrag;
+
+        /// <summary>Pointer origin for the pending command-drag duplicate gesture.</summary>
+        private Vec2 _dupDragStart;
+
+        /// <summary>True after a pending command-drag has crossed its threshold and cloned the selection.</summary>
+        private bool _dupDragArmed;
+
+        /// <summary>Primary-object coordinates captured with <see cref="_groupDragOrigins"/>.</summary>
+        private int _primaryOriginX;
+        private int _primaryOriginY;
 
         /// <summary>True while the water surface line is being dragged.</summary>
         private bool _waterDrag;

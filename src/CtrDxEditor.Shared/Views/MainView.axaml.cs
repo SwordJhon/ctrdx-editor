@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Notifications;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -21,6 +23,9 @@ namespace CtrDxEditor.Views
     public partial class MainView : UserControl
     {
         private EditorViewModel? _mutatedSubscription;
+        private EditorSelection? _selectionSubscription;
+        // Guards the two-way object-panel <-> selection sync from looping.
+        private bool _syncingTreeSelection;
         private readonly Action _invalidateCanvas;
         private readonly PaletteDragController _paletteDrag;
         private WindowNotificationManager? _notifications;
@@ -45,7 +50,40 @@ namespace CtrDxEditor.Views
             canvas.PlaceAt = (element, x, y) =>
                 DataContext is EditorViewModel vm ? vm.PlaceObject(element, x, y) : null;
             canvas.ToggleLock = obj => (DataContext as EditorViewModel)?.ToggleLock(obj);
+            canvas.SelectionRequested = request =>
+            {
+                if (DataContext is not EditorViewModel vm)
+                {
+                    return;
+                }
+
+                switch (request.Kind)
+                {
+                    case LevelCanvas.SelectionRequestKind.Replace:
+                        if (request.Target is { } replaceTarget)
+                        {
+                            vm.Selection.Replace(replaceTarget);
+                        }
+                        break;
+                    case LevelCanvas.SelectionRequestKind.Toggle:
+                        if (request.Target is { } toggleTarget)
+                        {
+                            vm.Selection.Toggle(toggleTarget);
+                        }
+                        break;
+                    case LevelCanvas.SelectionRequestKind.Clear:
+                        if (!vm.CollapseLayerSelectionToActive())
+                        {
+                            vm.Selection.Clear();
+                        }
+                        break;
+                    default:
+                        break;
+                }
+                vm.RaiseSelectedObjectChanged();
+            };
             canvas.SelectedObjectMoved = () => (DataContext as EditorViewModel)?.RefreshFieldValues();
+            canvas.DuplicateRequested = () => (DataContext as EditorViewModel)?.DuplicateSelection(0, 0);
             canvas.HandSegmentActivated = index => (DataContext as EditorViewModel)?.ExpandFieldGroup(index);
             canvas.BeginDocumentEdit = () => (DataContext as EditorViewModel)?.BeginUndoTransaction();
             canvas.CompleteDocumentEdit = () => (DataContext as EditorViewModel)?.CompleteUndoTransaction();
@@ -64,10 +102,6 @@ namespace CtrDxEditor.Views
                 PointerReleasedEvent, _paletteDrag.OnPointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
             paletteList.AddHandler(
                 PointerCaptureLostEvent, _paletteDrag.OnPointerCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
-            // Swallow command-modified presses on the layer tree (tunnel, before the built-in selection
-            // logic) so Cmd/Ctrl+click cannot toggle the single selection off and deselect the row.
-            this.FindControl<TreeView>("LayersTree")!.AddHandler(
-                PointerPressedEvent, LayersTree_PointerPressed, RoutingStrategies.Tunnel);
             // Observe every release in the view so a captured row drag also completes when released outside
             // its source row. Before the movement threshold, row controls retain normal click/edit behavior.
             AddHandler(PointerReleasedEvent, LayerRow_PointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
@@ -88,6 +122,8 @@ namespace CtrDxEditor.Views
             _mutatedSubscription?.ObjectMutated -= _invalidateCanvas;
             _mutatedSubscription?.LevelLoaded -= FocusCanvasAfterLevelLoaded;
             _mutatedSubscription?.PropertyChanged -= ViewModel_PropertyChanged;
+            _selectionSubscription?.Changed -= SyncCanvasSelection;
+            _selectionSubscription = null;
 
             _mutatedSubscription = DataContext as EditorViewModel;
             if (_mutatedSubscription is not null)
@@ -95,6 +131,7 @@ namespace CtrDxEditor.Views
                 _mutatedSubscription.ObjectMutated += _invalidateCanvas;
                 _mutatedSubscription.LevelLoaded += FocusCanvasAfterLevelLoaded;
                 _mutatedSubscription.PropertyChanged += ViewModel_PropertyChanged;
+                SubscribeToSelection(_mutatedSubscription.Selection);
             }
 
             SyncAnimationPreviewTimer();
@@ -116,11 +153,150 @@ namespace CtrDxEditor.Views
             {
                 ClearLockedTreeSelection();
             }
+
+            if (e.PropertyName == nameof(EditorViewModel.Selection)
+                && sender is EditorViewModel vm)
+            {
+                SubscribeToSelection(vm.Selection);
+            }
+
+            if (e.PropertyName == nameof(EditorViewModel.SelectedLayers))
+            {
+                SyncTreeFromModel();
+            }
         }
 
-        private void LayersTree_SelectionChanged(object? _, SelectionChangedEventArgs __)
+        private void SubscribeToSelection(EditorSelection selection)
+        {
+            if (ReferenceEquals(_selectionSubscription, selection))
+            {
+                return;
+            }
+
+            _selectionSubscription?.Changed -= SyncCanvasSelection;
+            _selectionSubscription = selection;
+            _selectionSubscription.Changed += SyncCanvasSelection;
+            SyncCanvasSelection();
+        }
+
+        private void SyncCanvasSelection()
+        {
+            if (_selectionSubscription is null)
+            {
+                return;
+            }
+
+            _canvas.SelectedObjects = new HashSet<LevelObject>(_selectionSubscription.Items);
+            _canvas.PrimaryObject = _selectionSubscription.Primary;
+            _canvas.InvalidateVisual();
+            SyncTreeFromModel();
+        }
+
+        // Mirrors the active model selection mode into the tree's SelectedItems. Guarded so the resulting
+        // SelectionChanged does not translate straight back into the model.
+        private void SyncTreeFromModel()
+        {
+            if (_mutatedSubscription is not { } vm
+                || this.FindControl<TreeView>("LayersTree") is not { } tree)
+            {
+                return;
+            }
+
+            object[] target = vm.SelectedLayers.Count > 0
+                ? [.. vm.SelectedLayers.Cast<object>()]
+                : [.. (_selectionSubscription?.Items ?? []).Cast<object>()];
+            object[] current = [.. tree.SelectedItems.Cast<object>()];
+            if (target.Length == current.Length && !target.Except(current).Any())
+            {
+                return;
+            }
+
+            _syncingTreeSelection = true;
+            try
+            {
+                tree.SelectedItems.Clear();
+                foreach (object item in target)
+                {
+                    _ = tree.SelectedItems.Add(item);
+                }
+            }
+            finally
+            {
+                _syncingTreeSelection = false;
+            }
+        }
+
+        // Blank tree space collapses a multi-layer selection without disturbing row or scrollbar input.
+        private void LayersTree_PointerPressed(object? _, PointerPressedEventArgs e)
+        {
+            if (DataContext is not EditorViewModel vm
+                || e.GetCurrentPoint(null).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed
+                || e.Source is not Visual source
+                || source.GetVisualAncestors().Prepend(source)
+                    .Any(visual => visual is TreeViewItem or ScrollBar))
+            {
+                return;
+            }
+
+            if (vm.CollapseLayerSelectionToActive())
+            {
+                e.Handled = true;
+            }
+        }
+
+        // Translates the object panel's selected rows into the mutually exclusive model selection modes.
+        private void LayersTree_SelectionChanged(object? _, SelectionChangedEventArgs e)
         {
             ClearLockedTreeSelection();
+
+            if (_syncingTreeSelection
+                || DataContext is not EditorViewModel vm
+                || this.FindControl<TreeView>("LayersTree") is not { } tree)
+            {
+                return;
+            }
+
+            List<LevelObject> objects = [.. tree.SelectedItems.OfType<LevelObject>()];
+            List<LayerViewModel> layers = [.. tree.SelectedItems.OfType<LayerViewModel>()];
+            // The just-touched kind wins so the two stay mutually exclusive.
+            bool addedLayer = e.AddedItems.OfType<LayerViewModel>().Any();
+
+            _syncingTreeSelection = true;
+            try
+            {
+                if (addedLayer && layers.Count > 0)
+                {
+                    vm.SetLayerSelection(layers, layers[^1]);
+                    RemoveFromTreeSelection(tree, tree.SelectedItems.OfType<LevelObject>().Cast<object>());
+                }
+                else if (objects.Count > 0)
+                {
+                    vm.SetObjectSelection(objects);
+                    RemoveFromTreeSelection(tree, tree.SelectedItems.OfType<LayerViewModel>().Cast<object>());
+                }
+                else if (layers.Count > 0)
+                {
+                    vm.SetLayerSelection(layers, layers[^1]);
+                }
+                else
+                {
+                    vm.ClearLayerSelection();
+                    vm.Selection.Clear();
+                    vm.RaiseSelectedObjectChanged();
+                }
+            }
+            finally
+            {
+                _syncingTreeSelection = false;
+            }
+        }
+
+        private static void RemoveFromTreeSelection(TreeView tree, IEnumerable<object> items)
+        {
+            foreach (object item in items.ToList())
+            {
+                tree.SelectedItems.Remove(item);
+            }
         }
 
         private void ClearLockedTreeSelection()

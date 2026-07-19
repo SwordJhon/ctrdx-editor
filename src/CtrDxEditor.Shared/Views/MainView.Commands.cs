@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -43,6 +44,39 @@ namespace CtrDxEditor.Views
             if (DataContext is EditorViewModel vm)
             {
                 vm.DeleteSelected();
+                this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
+            }
+        }
+
+        private void Cut_Click(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is EditorViewModel vm)
+            {
+                vm.CutSelection();
+                this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
+            }
+        }
+
+        private void Copy_Click(object? sender, RoutedEventArgs e)
+        {
+            (DataContext as EditorViewModel)?.CopySelection();
+        }
+
+        private void Paste_Click(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is EditorViewModel vm)
+            {
+                (int pasteX, int pasteY) = _canvas.PasteTargetLevelPoint();
+                vm.PasteAt(pasteX, pasteY);
+                this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
+            }
+        }
+
+        private void SelectAll_Click(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is EditorViewModel vm)
+            {
+                vm.SelectAllObjects();
                 this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
             }
         }
@@ -107,12 +141,20 @@ namespace CtrDxEditor.Views
 
         private void LayerMoveUp_Click(object? sender, RoutedEventArgs e)
         {
-            (DataContext as EditorViewModel)?.MoveActiveLayer(-1);
+            (DataContext as EditorViewModel)?.MoveSelectedLayers(-1);
         }
 
         private void LayerMoveDown_Click(object? sender, RoutedEventArgs e)
         {
-            (DataContext as EditorViewModel)?.MoveActiveLayer(1);
+            (DataContext as EditorViewModel)?.MoveSelectedLayers(1);
+        }
+
+        private void LayerMergeSelected_Click(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is EditorViewModel vm)
+            {
+                vm.MergeSelectedLayers();
+            }
         }
 
         private void LayerVisibility_Click(object? sender, RoutedEventArgs e)
@@ -120,7 +162,15 @@ namespace CtrDxEditor.Views
             if (DataContext is EditorViewModel vm
                 && sender is ToggleButton { Tag: LayerViewModel row } toggle)
             {
-                vm.SetLayerHidden(row.Layer, toggle.IsChecked != true);
+                bool hidden = toggle.IsChecked != true;
+                if (vm.SelectedLayers.Any(layer => ReferenceEquals(layer, row)) && vm.SelectedLayers.Count > 1)
+                {
+                    vm.SetSelectedLayersHidden(hidden);
+                }
+                else
+                {
+                    vm.SetLayerHidden(row.Layer, hidden);
+                }
                 e.Handled = true;
             }
         }
@@ -302,16 +352,6 @@ namespace CtrDxEditor.Views
         private bool _rowDragActive;
         private Point _rowDragTreePosition;
         private DispatcherTimer? _rowDragScrollTimer;
-
-        // Blocks the platform command modifier (Cmd on macOS, Ctrl elsewhere) from reaching the tree's
-        // single-selection logic, which would otherwise toggle the clicked row off.
-        private void LayersTree_PointerPressed(object? sender, PointerPressedEventArgs e)
-        {
-            if (e.KeyModifiers.HasFlag(CmdModifier))
-            {
-                e.Handled = true;
-            }
-        }
 
         private void LayerRow_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
@@ -665,16 +705,32 @@ namespace CtrDxEditor.Views
         {
             if (DataContext is EditorViewModel vm && sender is Control { Tag: LayerViewModel row })
             {
-                vm.SetLayerLocked(row.Layer, !vm.IsLayerLocked(row.Layer));
+                bool next = !vm.IsLayerLocked(row.Layer);
+                if (vm.SelectedLayers.Any(layer => ReferenceEquals(layer, row)) && vm.SelectedLayers.Count > 1)
+                {
+                    vm.SetSelectedLayersLocked(next);
+                }
+                else
+                {
+                    vm.SetLayerLocked(row.Layer, next);
+                }
             }
         }
 
         private async void LayerDeleteActive_Click(object? sender, RoutedEventArgs e)
         {
-            if (DataContext is EditorViewModel { ActiveLayer: { } active } vm
-                && await ConfirmDeleteLayerAsync(active.Layer.Name))
+            if (DataContext is not EditorViewModel vm || vm.EffectiveLayerTargets.Count == 0)
             {
-                vm.DeleteActiveLayer();
+                return;
+            }
+
+            IReadOnlyList<LayerViewModel> targets = vm.EffectiveLayerTargets;
+            string prompt = targets.Count == 1
+                ? targets[0].Layer.Name
+                : $"{targets.Count} layers";
+            if (await ConfirmDeleteLayerAsync(prompt))
+            {
+                vm.DeleteSelectedLayers();
             }
         }
 

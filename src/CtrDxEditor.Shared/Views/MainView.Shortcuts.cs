@@ -86,6 +86,19 @@ namespace CtrDxEditor.Views
                 case EditorShortcut.Redo when DataContext is EditorViewModel { CanRedo: true } redoVm:
                     redoVm.Redo();
                     return true;
+                case EditorShortcut.SelectAll when DataContext is EditorViewModel { CanSelectAllObjects: true } selectVm:
+                    selectVm.SelectAllObjects();
+                    return true;
+                case EditorShortcut.Copy when DataContext is EditorViewModel { CanCopySelection: true } copyVm:
+                    copyVm.CopySelection();
+                    return true;
+                case EditorShortcut.Cut when DataContext is EditorViewModel { CanCutSelection: true } cutVm:
+                    cutVm.CutSelection();
+                    return true;
+                case EditorShortcut.Paste when DataContext is EditorViewModel { CanPaste: true } pasteVm:
+                    (int pasteX, int pasteY) = _canvas.PasteTargetLevelPoint();
+                    pasteVm.PasteAt(pasteX, pasteY);
+                    return true;
                 case EditorShortcut.ZoomIn when DataContext is EditorViewModel { HasDocument: true }:
                     this.FindControl<LevelCanvas>("Canvas")!.ZoomBy(1.2);
                     return true;
@@ -95,11 +108,22 @@ namespace CtrDxEditor.Views
                 case EditorShortcut.ZoomFit when DataContext is EditorViewModel { HasDocument: true }:
                     this.FindControl<LevelCanvas>("Canvas")!.FitToView();
                     return true;
-                case EditorShortcut.Delete when DataContext is EditorViewModel deleteVm:
-                    deleteVm.DeleteSelected();
-                    this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
+                case EditorShortcut.Delete when DataContext is EditorViewModel { HasDocument: true } deleteVm:
+                    if (deleteVm.SelectedLayers.Count > 0)
+                    {
+                        LayerDeleteActive_Click(this, new RoutedEventArgs());
+                    }
+                    else if (deleteVm.CanDeleteSelection)
+                    {
+                        deleteVm.DeleteSelected();
+                        this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
+                    }
+                    else
+                    {
+                        return false;
+                    }
                     return true;
-                case EditorShortcut.ToggleAnimationPreview when DataContext is EditorViewModel { HasDocument: true } previewVm:
+                case EditorShortcut.ToggleAnimationPreview when DataContext is EditorViewModel { CanToggleAnimationPreview: true } previewVm:
                     previewVm.ToggleAnimationPreviewAll();
                     return true;
                 case EditorShortcut.None:
@@ -109,6 +133,10 @@ namespace CtrDxEditor.Views
                 case EditorShortcut.Close:
                 case EditorShortcut.Undo:
                 case EditorShortcut.Redo:
+                case EditorShortcut.SelectAll:
+                case EditorShortcut.Copy:
+                case EditorShortcut.Cut:
+                case EditorShortcut.Paste:
                 case EditorShortcut.ZoomIn:
                 case EditorShortcut.ZoomOut:
                 case EditorShortcut.ZoomFit:

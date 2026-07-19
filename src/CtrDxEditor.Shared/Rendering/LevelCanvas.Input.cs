@@ -45,7 +45,7 @@ namespace CtrDxEditor.Rendering
             // A grab animating in preview draws its ring at the moving position, but the edge hit-test and drag
             // math below use the authored center — so editing is disabled until the preview stops, matching how
             // an animating object is unpickable.
-            if (SelectedObject is not { } selected || IsAnimatingInPreview(selected) || View.Zoom <= 0)
+            if (!IsSingleSelection || SelectedObject is not { } selected || IsAnimatingInPreview(selected) || View.Zoom <= 0)
             {
                 return false;
             }
@@ -60,7 +60,8 @@ namespace CtrDxEditor.Rendering
         /// <summary>Whether a point is over the selected tutorial text's right-edge width handle.</summary>
         private bool HitTutorialTextResize(Vec2 levelPt)
         {
-            return SelectedObject is { } selected
+            return IsSingleSelection
+                && SelectedObject is { } selected
                 && TutorialObject.IsText(selected.Type)
                 && !IsAnimatingInPreview(selected)
                 && Sprites is { } sprites
@@ -80,7 +81,8 @@ namespace CtrDxEditor.Rendering
         /// <returns>The rail handle under the point, or <see cref="GrabRail.Handle.None"/>.</returns>
         private GrabRail.Handle HitRail(Vec2 levelPt)
         {
-            return SelectedObject is { Type: "grab" } sel
+            return IsSingleSelection
+                && SelectedObject is { Type: "grab" } sel
                 && View.Zoom > 0
                 && GrabRenderer.DrawsMovableRail(sel)
                 && GrabRail.Of(sel) is { } g
@@ -93,7 +95,7 @@ namespace CtrDxEditor.Rendering
         /// <returns>The strip resize handle under the point, or <see cref="SpikeResize.Handle.None"/>.</returns>
         private SpikeResize.Handle HitStripResize(Vec2 levelPt)
         {
-            if (SelectedObject is not { } sel || View.Zoom <= 0)
+            if (!IsSingleSelection || SelectedObject is not { } sel || View.Zoom <= 0)
             {
                 return SpikeResize.Handle.None;
             }
@@ -112,7 +114,7 @@ namespace CtrDxEditor.Rendering
         /// <returns>The conveyor handle under the point, or <see cref="ConveyorGeometry.Handle.None"/>.</returns>
         private ConveyorGeometry.Handle HitConveyor(Vec2 levelPt)
         {
-            return SelectedObject is { } sel && View.Zoom > 0 && ConveyorGeometry.Of(sel) is { } s
+            return IsSingleSelection && SelectedObject is { } sel && View.Zoom > 0 && ConveyorGeometry.Of(sel) is { } s
                 ? ConveyorGeometry.HitTest(s, levelPt, endTolerance: 9 / View.Zoom, widthTolerance: 9 / View.Zoom)
                 : ConveyorGeometry.Handle.None;
         }
@@ -167,10 +169,28 @@ namespace CtrDxEditor.Rendering
             return _handDragStartTarget + (levelPt - _handDragStartPointer);
         }
 
+        /// <summary>Captures stable object and primary origins for a group move.</summary>
+        private void CaptureGroupDragOrigins()
+        {
+            _groupDragOrigins.Clear();
+            IEnumerable<LevelObject> group = SelectedObjects.Count > 0
+                ? SelectedObjects
+                : PrimaryObject is { } fallback ? [fallback] : [];
+            foreach (LevelObject selected in group)
+            {
+                _groupDragOrigins.Add((selected, selected.X, selected.Y));
+            }
+            if (PrimaryObject is { } primary)
+            {
+                _primaryOriginX = primary.X;
+                _primaryOriginY = primary.Y;
+            }
+        }
+
         /// <summary>Which vinyl handle a level point is over, or <see cref="VinylGeometry.Handle.None"/>.</summary>
         private VinylGeometry.Handle HitVinylHandle(Vec2 levelPt)
         {
-            return SelectedObject is { Type: "rotatedCircle" } vinyl && View.Zoom > 0
+            return IsSingleSelection && SelectedObject is { Type: "rotatedCircle" } vinyl && View.Zoom > 0
                 ? VinylGeometry.HitTest(vinyl, levelPt, 18 / View.Zoom)
                 : VinylGeometry.Handle.None;
         }
@@ -197,7 +217,7 @@ namespace CtrDxEditor.Rendering
         /// <returns>The dial handle under the point, or <see cref="ObjectRotation.Handle.None"/>.</returns>
         private ObjectRotation.Handle HitRotationDial(Vec2 levelPt)
         {
-            if (SelectedObject is not { } obj || View.Zoom <= 0 || EditableRotationTarget(obj) is not { } target)
+            if (!IsSingleSelection || SelectedObject is not { } obj || View.Zoom <= 0 || EditableRotationTarget(obj) is not { } target)
             {
                 return ObjectRotation.Handle.None;
             }
@@ -331,7 +351,7 @@ namespace CtrDxEditor.Rendering
         private void UpdateHandSplitPreview(Vec2 levelPt, bool altHeld)
         {
             (Vec2 Position, bool Rotatable)? preview = null;
-            if (altHeld && SelectedObject is { } hand && HandObject.IsHand(hand.Type))
+            if (IsSingleSelection && altHeld && SelectedObject is { } hand && HandObject.IsHand(hand.Type))
             {
                 double tolerance = 9 / View.Zoom;
                 HandGeometry.Handle hit = HandGeometry.HitTest(hand, levelPt, tolerance, tolerance / 2);
@@ -359,7 +379,7 @@ namespace CtrDxEditor.Rendering
         private void UpdateHandHoverSegment(Vec2 levelPt, bool altHeld)
         {
             int hovered = 0;
-            if (!altHeld && SelectedObject is { } hand && HandObject.IsHand(hand.Type))
+            if (IsSingleSelection && !altHeld && SelectedObject is { } hand && HandObject.IsHand(hand.Type))
             {
                 double tolerance = 9 / View.Zoom;
                 HandGeometry.Handle hit = HandGeometry.HitTest(hand, levelPt, tolerance, tolerance / 2);
@@ -417,7 +437,7 @@ namespace CtrDxEditor.Rendering
         /// <summary>Returns the selected canonical waypoint under a level point, or -1.</summary>
         private int HitPolylinePoint(Vec2 levelPt)
         {
-            return SelectedObject is { } obj && View.Zoom > 0 && IsEditablePolyline(obj)
+            return IsSingleSelection && SelectedObject is { } obj && View.Zoom > 0 && IsEditablePolyline(obj)
                 && EditablePath.For(obj) is { } path
                 ? path.HitPoint(levelPt, tolerance: 9 / View.Zoom)
                 : -1;
@@ -426,7 +446,7 @@ namespace CtrDxEditor.Rendering
         /// <summary>Returns the segment whose midpoint insert handle is under a level point, or -1.</summary>
         private int HitPolylineSegment(Vec2 levelPt)
         {
-            if (SelectedObject is not { } obj || View.Zoom <= 0
+            if (!IsSingleSelection || SelectedObject is not { } obj || View.Zoom <= 0
                 || EditablePath.For(obj) is not { CanAdd: true } path)
             {
                 return -1;
@@ -476,7 +496,7 @@ namespace CtrDxEditor.Rendering
         /// <summary>True when the pointer is over the append nub for the selected editable polyline.</summary>
         private bool HitPolylineNub(Vec2 levelPt)
         {
-            if (SelectedObject is not { } obj || View.Zoom <= 0
+            if (!IsSingleSelection || SelectedObject is not { } obj || View.Zoom <= 0
                 || EditablePath.For(obj) is not { CanAdd: true })
             {
                 return false;
@@ -495,7 +515,7 @@ namespace CtrDxEditor.Rendering
         /// </summary>
         private bool HoveringPolylineLimit(Vec2 levelPt)
         {
-            if (SelectedObject is not { } obj || View.Zoom <= 0
+            if (!IsSingleSelection || SelectedObject is not { } obj || View.Zoom <= 0
                 || EditablePath.For(obj) is not { } path
                 || IsAnimatingInPreview(obj)
                 || path.CanAdd)
@@ -684,7 +704,7 @@ namespace CtrDxEditor.Rendering
             Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
             if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
             {
-                if (SelectedObject is { } rightHand && HandObject.IsHand(rightHand.Type))
+                if (IsSingleSelection && SelectedObject is { } rightHand && HandObject.IsHand(rightHand.Type))
                 {
                     double rightTolerance = 9 / View.Zoom;
                     HandGeometry.Handle rightHandHit = HandGeometry.HitTest(
@@ -710,7 +730,7 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
-            if (SelectedObject is { Type: "ghost" } selectedGhost)
+            if (IsSingleSelection && SelectedObject is { Type: "ghost" } selectedGhost)
             {
                 foreach ((Rect iconRect, GhostMorph morph) in _ghostIconHits)
                 {
@@ -812,7 +832,7 @@ namespace CtrDxEditor.Rendering
             }
 
             HandGeometry.Handle pressedHandHit = new(HandGeometry.HandleKind.None, 0);
-            if (SelectedObject is { } pressedHand && HandObject.IsHand(pressedHand.Type))
+            if (IsSingleSelection && SelectedObject is { } pressedHand && HandObject.IsHand(pressedHand.Type))
             {
                 double handTolerance = 9 / View.Zoom;
                 pressedHandHit = HandGeometry.HitTest(
@@ -880,7 +900,7 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
-            if (SelectedObject is { } handObj && HandObject.IsHand(handObj.Type))
+            if (IsSingleSelection && SelectedObject is { } handObj && HandObject.IsHand(handObj.Type))
             {
                 switch (pressedHandHit.Kind)
                 {
@@ -989,7 +1009,14 @@ namespace CtrDxEditor.Rendering
                     return;
                 }
 
-                SelectedObject = null;
+                if (SelectionRequested is { } clearSelection)
+                {
+                    clearSelection(new SelectionRequest(SelectionRequestKind.Clear, null));
+                }
+                else
+                {
+                    SelectedObject = null;
+                }
                 _panning = true;
                 _panLast = p;
                 e.Pointer.Capture(this);
@@ -997,17 +1024,45 @@ namespace CtrDxEditor.Rendering
             }
 
             LevelObject obj = doc.AllObjects[hit];
-            SelectedObject = obj;
-            _dragOffset = levelPt - new Vec2(obj.X, obj.Y);
-            _dragging = true;
-            _handObjectDrag = HandObject.IsHand(obj.Type);
-            if (_handObjectDrag)
+            bool commandDown = e.KeyModifiers.HasFlag(KeyModifiers.Control)
+                || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+            bool alreadySelected = SelectedObjects.Contains(obj);
+            if (commandDown && !alreadySelected)
             {
-                PrepareHandDrag(levelPt, new Vec2(obj.X, obj.Y));
+                SelectionRequested?.Invoke(new SelectionRequest(SelectionRequestKind.Toggle, obj));
+                e.Handled = true;
+                return;
             }
-            else
+            if (!alreadySelected)
+            {
+                if (SelectionRequested is { } replaceSelection)
+                {
+                    replaceSelection(new SelectionRequest(SelectionRequestKind.Replace, obj));
+                }
+                else
+                {
+                    SelectedObject = obj;
+                }
+            }
+
+            CaptureGroupDragOrigins();
+            bool draggingSingleHand = IsSingleSelection && HandObject.IsHand(obj.Type);
+            if (commandDown)
+            {
+                _pendingDupDrag = true;
+                _dupDragArmed = false;
+                _dupDragStart = levelPt;
+            }
+            else if (!draggingSingleHand)
             {
                 BeginDocumentEdit?.Invoke();
+            }
+            _dragOffset = levelPt - new Vec2(PrimaryObject!.X, PrimaryObject.Y);
+            _dragging = true;
+            _handObjectDrag = draggingSingleHand;
+            if (_handObjectDrag)
+            {
+                PrepareHandDrag(levelPt, new Vec2(PrimaryObject.X, PrimaryObject.Y));
             }
             e.Pointer.Capture(this);
         }
@@ -1172,7 +1227,7 @@ namespace CtrDxEditor.Rendering
                 bool overPolylineInsert = HitPolylineSegment(levelPt) >= 0;
                 _handHoverJoint = 0;
                 HandGeometry.HandleKind hoverHandKind = HandGeometry.HandleKind.None;
-                if (SelectedObject is { } hoverHand && HandObject.IsHand(hoverHand.Type))
+                if (IsSingleSelection && SelectedObject is { } hoverHand && HandObject.IsHand(hoverHand.Type))
                 {
                     double hoverTolerance = 9 / View.Zoom;
                     HandGeometry.Handle hoverHit = HandGeometry.HitTest(
@@ -1222,9 +1277,26 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
+            if (_pendingDupDrag && !_dupDragArmed)
+            {
+                if (!HandGeometry.HasDragged(_dupDragStart, levelPt, View.Zoom))
+                {
+                    return;
+                }
+
+                _dupDragArmed = true;
+                DuplicateRequested?.Invoke();
+                CaptureGroupDragOrigins();
+            }
+
             (int gx, int gy) = Snap(levelPt - _dragOffset);
-            selected.X = gx;
-            selected.Y = gy;
+            int deltaX = gx - _primaryOriginX;
+            int deltaY = gy - _primaryOriginY;
+            foreach ((LevelObject obj, int originX, int originY) in _groupDragOrigins)
+            {
+                obj.X = originX + deltaX;
+                obj.Y = originY + deltaY;
+            }
             SelectedObjectMoved?.Invoke();
             InvalidateVisual();
         }
@@ -1262,6 +1334,11 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
+            if (_pendingDupDrag && !_dupDragArmed && PrimaryObject is { } tapTarget)
+            {
+                SelectionRequested?.Invoke(new SelectionRequest(SelectionRequestKind.Toggle, tapTarget));
+            }
+
             bool handHandleEdited = (_handJointDrag > 0 || _handBaseDrag) && _handDragHasMoved;
             bool editedDocument = (_dragging && (!_handObjectDrag || _handDragHasMoved))
                 || _resizingRadius || _resizingTutorialText || _polylinePointDrag > 0
@@ -1270,6 +1347,12 @@ namespace CtrDxEditor.Rendering
                 || _conveyorDrag != ConveyorGeometry.Handle.None
                 || _vinylHandleDrag != VinylGeometry.Handle.None || _rotating || _waterDrag;
             _dragging = false;
+            _pendingDupDrag = false;
+            _dupDragArmed = false;
+            _dupDragStart = default;
+            _groupDragOrigins.Clear();
+            _primaryOriginX = 0;
+            _primaryOriginY = 0;
             _waterDrag = false;
             _panning = false;
             _resizingRadius = false;

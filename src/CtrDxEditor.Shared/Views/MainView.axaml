@@ -108,8 +108,53 @@
             </Grid>
           </MenuItem.Header>
         </MenuItem>
-        <MenuItem Click="Delete_Click"
-                  IsEnabled="{Binding SelectedObject, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <Separator />
+        <MenuItem Click="Cut_Click" IsEnabled="{Binding CanCutSelection}">
+          <MenuItem.Icon>
+            <icons:MaterialIcon Kind="ContentCut" />
+          </MenuItem.Icon>
+          <MenuItem.Header>
+            <Grid ColumnDefinitions="*,Auto" MinWidth="170">
+              <AccessText Grid.Column="0" Text="{loc:Tr Menu.Edit.Cut}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{x:Static views:ShortcutHint.Cut}" Opacity="0.6" Margin="24,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+          </MenuItem.Header>
+        </MenuItem>
+        <MenuItem Click="Copy_Click" IsEnabled="{Binding CanCopySelection}">
+          <MenuItem.Icon>
+            <icons:MaterialIcon Kind="ContentCopy" />
+          </MenuItem.Icon>
+          <MenuItem.Header>
+            <Grid ColumnDefinitions="*,Auto" MinWidth="170">
+              <AccessText Grid.Column="0" Text="{loc:Tr Menu.Edit.Copy}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{x:Static views:ShortcutHint.Copy}" Opacity="0.6" Margin="24,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+          </MenuItem.Header>
+        </MenuItem>
+        <MenuItem Click="Paste_Click" IsEnabled="{Binding CanPaste}">
+          <MenuItem.Icon>
+            <icons:MaterialIcon Kind="ContentPaste" />
+          </MenuItem.Icon>
+          <MenuItem.Header>
+            <Grid ColumnDefinitions="*,Auto" MinWidth="170">
+              <AccessText Grid.Column="0" Text="{loc:Tr Menu.Edit.Paste}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{x:Static views:ShortcutHint.Paste}" Opacity="0.6" Margin="24,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+          </MenuItem.Header>
+        </MenuItem>
+        <MenuItem Click="SelectAll_Click" IsEnabled="{Binding CanSelectAllObjects}">
+          <MenuItem.Icon>
+            <icons:MaterialIcon Kind="SelectAll" />
+          </MenuItem.Icon>
+          <MenuItem.Header>
+            <Grid ColumnDefinitions="*,Auto" MinWidth="170">
+              <AccessText Grid.Column="0" Text="{loc:Tr Menu.Edit.SelectAll}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{x:Static views:ShortcutHint.SelectAll}" Opacity="0.6" Margin="24,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+          </MenuItem.Header>
+        </MenuItem>
+        <Separator />
+        <MenuItem Click="Delete_Click" IsEnabled="{Binding CanDeleteSelection}">
           <MenuItem.Icon>
             <icons:MaterialIcon Kind="DeleteOutline" />
           </MenuItem.Icon>
@@ -165,7 +210,7 @@
           </MenuItem.Header>
         </MenuItem>
         <Separator />
-        <MenuItem Click="AnimationPreviewToggle_Click" IsEnabled="{Binding HasDocument}">
+        <MenuItem Click="AnimationPreviewToggle_Click" IsEnabled="{Binding CanToggleAnimationPreview}">
           <MenuItem.Icon>
             <Grid>
               <icons:MaterialIcon Kind="PlayArrow">
@@ -347,9 +392,10 @@
         <TreeView Grid.Row="1" Margin="4,0,4,4" x:Name="LayersTree"
                   Background="Transparent"
                   KeyDown="LayerTree_KeyDown"
+                  PointerPressed="LayersTree_PointerPressed"
                   SelectionChanged="LayersTree_SelectionChanged"
                   ItemsSource="{Binding Layers}"
-                  SelectedItem="{Binding SelectedTreeItem, Mode=TwoWay}">
+                  SelectionMode="Multiple">
           <TreeView.Styles>
             <Style Selector="TreeViewItem">
               <Setter Property="IsExpanded"
@@ -587,28 +633,33 @@
             </DataTemplate>
           </TreeView.DataTemplates>
         </TreeView>
-        <Grid Grid.Row="2" Margin="4,4,4,6" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto"
+        <Grid Grid.Row="2" Margin="4,4,4,6" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto"
               IsVisible="{Binding HasDocument, FallbackValue=False}">
           <Button Grid.Column="0" Command="{Binding AddLayerCommand}" ToolTip.Tip="{loc:Tr Layer.Add}"
                   Width="24" Height="24" Padding="0" Background="Transparent" BorderBrush="Transparent">
             <icons:MaterialIcon Kind="Plus" Width="16" Height="16" />
           </Button>
           <Button Grid.Column="1" Click="LayerDeleteActive_Click" ToolTip.Tip="{loc:Tr Layer.Delete}"
-                  IsEnabled="{Binding CanDeleteActiveLayer}"
+                  IsEnabled="{Binding CanDeleteSelectedLayers}"
                   Width="24" Height="24" Padding="0" Background="Transparent" BorderBrush="Transparent">
             <icons:MaterialIcon Kind="Minus" Width="16" Height="16" />
           </Button>
           <Button Grid.Column="2" Click="LayerMoveUp_Click" ToolTip.Tip="{loc:Tr Layer.MoveUp}"
-                  IsEnabled="{Binding CanMoveActiveLayerUp}"
+                  IsEnabled="{Binding CanMoveSelectedLayersUp}"
                   Width="24" Height="24" Padding="0" Background="Transparent" BorderBrush="Transparent">
             <icons:MaterialIcon Kind="ArrowUp" Width="16" Height="16" />
           </Button>
           <Button Grid.Column="3" Click="LayerMoveDown_Click" ToolTip.Tip="{loc:Tr Layer.MoveDown}"
-                  IsEnabled="{Binding CanMoveActiveLayerDown}"
+                  IsEnabled="{Binding CanMoveSelectedLayersDown}"
                   Width="24" Height="24" Padding="0" Background="Transparent" BorderBrush="Transparent">
             <icons:MaterialIcon Kind="ArrowDown" Width="16" Height="16" />
           </Button>
-          <Button Grid.Column="4" Command="{Binding ToggleLayersExpandedCommand}"
+          <Button Grid.Column="4" Click="LayerMergeSelected_Click" ToolTip.Tip="{loc:Tr Layer.Merge}"
+                  IsEnabled="{Binding CanMergeSelectedLayers}"
+                  Width="24" Height="24" Padding="0" Background="Transparent" BorderBrush="Transparent">
+            <icons:MaterialIcon Kind="CallMerge" Width="16" Height="16" />
+          </Button>
+          <Button Grid.Column="5" Command="{Binding ToggleLayersExpandedCommand}"
                   ToolTip.Tip="{loc:Tr Layer.ToggleExpand}"
                   Width="24" Height="24" Padding="0" Background="Transparent" BorderBrush="Transparent">
             <Grid>
@@ -618,7 +669,7 @@
                                   IsVisible="{Binding !AllLayersExpanded}" />
             </Grid>
           </Button>
-          <ComboBox Grid.Column="6" ItemsSource="{Binding AvailableLocales}"
+          <ComboBox Grid.Column="7" ItemsSource="{Binding AvailableLocales}"
                     SelectedIndex="{Binding DisplayLocaleIndex, Mode=TwoWay}"
                     IsVisible="{Binding HasLocalizedText, FallbackValue=False}"
                     MinWidth="96" Height="24" Padding="6,0"
