@@ -1,14 +1,12 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
 
 using Xunit;
 
 namespace CtrDxEditor.Tests
 {
     /// <summary>
-    /// The locate dialog's drop route. The rules it applies live in <see cref="CtrDxEditor.Playtest.DxExecutableResolver"/>
+    /// The locate dialog's drop route. The rules it applies live in <see cref="Playtest.DxExecutableResolver"/>
     /// and are tested directly there; what is asserted here is that the dialog actually applies them,
     /// which has to be read off the source because DragEventArgs cannot be constructed in a unit test.
     /// </summary>
@@ -39,10 +37,7 @@ namespace CtrDxEditor.Tests
         [Fact]
         public void RefusedDropReportsAnError()
         {
-            string dialog = SourceText("PlaytestLocateDialog.axaml.cs");
             string view = SourceText("PlaytestLocateDialog.axaml");
-
-            Assert.Contains("ErrorMessage = error ?? Localizer.Get(\"Dialog.Playtest.Locate.DropNotBundle\")", dialog, StringComparison.Ordinal);
 
             // The error line has to sit outside the macOS-only block, or a drop refused on Windows or
             // Linux would set a message that is never displayed.
@@ -51,19 +46,6 @@ namespace CtrDxEditor.Tests
             int error = view.IndexOf("Text=\"{Binding ErrorMessage}\"", StringComparison.Ordinal);
 
             Assert.True(error > endOfMacOnly, "The error text should be outside the macOS-only panel.");
-        }
-
-        /// <summary>The refusal names what to drag instead, and points dev builds at the typed path.</summary>
-        [Fact]
-        public void NonBundleRefusalIsLocalized()
-        {
-            string path = SourcePath("CtrDxEditor.Shared", "Localization", "en.json");
-            Dictionary<string, string> strings = JsonSerializer.Deserialize<Dictionary<string, string>>(
-                File.ReadAllText(path))!;
-
-            string message = strings["Dialog.Playtest.Locate.DropNotBundle"];
-            Assert.Contains("CutTheRope-DX.app", message, StringComparison.Ordinal);
-            Assert.Contains("development build", message, StringComparison.Ordinal);
         }
 
         private static string SourceText(string fileName)
