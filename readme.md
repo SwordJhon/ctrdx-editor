@@ -22,15 +22,68 @@ This project is a part of the [_Cut the Rope Home_](https://ctrhome.github.io/fa
 
 Coming soon.
 
-### Features
+## Features
 
-- **Cross-platform**: runs as a native desktop app on Windows, macOS, and Linux, or directly in the browser (WebAssembly) — no install required.
-- **Visual editing**: drag-and-drop object palette, a property panel for fine-tuning attributes, and a level settings dialog.
-- **Full object support**: place and edit the range of _Cut the Rope: DX_ level objects — candy, ropes and grabs, bouncers, spikes, and so on.
-- **Live preview**: preview object animations while you edit.
-- **Level validation**: catch invalid levels before you export them.
+### Editing
+
+- **Drag-and-drop palette**: searchable object list, grouped by _Cut the Rope_ and _Cut the Rope: Experiments_, with the objects unavailable to the current level gated out.
+- **Full object roster**: Om Nom, candy (whole and split halves), stars, rope hooks, bubbles, air cushions, gravity buttons, light bulbs, lanterns, spikes, electric sparks, magic hats, bouncers, ghosts, steam pipes, vinyls, mice, conveyors, ant conveyors, bamboo tubes, rockets, snails, mechanical hands, and tutorial icons and text.
+- **Direct canvas manipulation**: rotation dials, resize handles, grab rails and radii, mechanical-hand segments, and editable movement paths—drag points to reshape a polyline, right-click one to remove it.
+- **Movement modes**: orbit and polyline paths (up to 99 points) with speed, direction, retrace, and closed-loop control.
+- **Property panel**: per-attribute editors with inline help for the non-obvious ones (rocket impulse, slack-rope factor, water drain, and so on).
+- **Selection and clipboard**: marquee and shift multi-select, select all, cut/copy/paste, delete, and full undo/redo across every edit.
+- **Snap to grid** for precise placement.
+
+### Layers
+
+- Add, rename, reorder, merge, and delete layers, with an undo-safe confirmation before a layer and its contents go away.
+- Per-layer and per-object visibility and lock toggles—double-click an object on the canvas to lock or unlock it.
+- Object counts per layer and expand/collapse-all for large levels.
+
+### Level setup
+
+- **Level settings dialog**: resolution presets or a custom size, rope physics speed, mobile physics, half-candy and night-level mechanics, and the special tutorial staging id.
+- **Water**: pool height plus drain speed, with a live readout of how long the pool takes to empty.
+- **Customization**: rope color, 17 backgrounds, 52 candy skins, and 17 Om Nom platforms—each pickable at random, and optionally remembered as your defaults for the next new level.
+
+### Viewing
+
+- **Live animation preview**: play object animations while you edit, per object or for the whole level.
+- **Diagnostic overlays**: toggle hitboxes, force fields, and movement paths.
+- **Tutorial language picker**: levels with localized tutorial text can be viewed one locale at a time.
+- **Navigation**: zoom in/out/fit, <kbd>Ctrl</kbd>+wheel zoom, wheel and <kbd>Shift</kbd>+wheel scrolling, middle-drag panning, and pinch/magnify gestures on trackpads and touchscreens.
+
+### Files and workflow
+
+- **Drag and drop to open**: drop a level XML anywhere on the window.
 - **Lossless XML round-trip**: unknown layers and attributes are preserved verbatim, so opening and re-saving a level never rewrites data the editor doesn't understand.
-- **Editing quality of life**: keyboard shortcuts and unsaved-changes protection.
+- **Level validation**: catches missing candy or Om Nom, mismatched candy halves, a night level with no bulb, duplicate `candyNumber`s, grabs bound to nonexistent candies or bulbs, idle ghosts, candy that spawns inside a spike or on Om Nom's mouth, and more—before you save or play.
+- **Playtest**: launch the level straight into _Cut the Rope: DX_ from the File menu.
+- **Screenshot export**: save a PNG of the level as rendered.
+- **Unsaved-changes protection** on new, open, close, and quit.
+- **Guided asset setup**: the editor fetches the game assets it needs on first run, or installs them from a zip you already have.
+
+### Platform
+
+- **Cross-platform**: a native AOT, single-file desktop app for Windows, macOS, and Linux, or run it directly in the browser (WebAssembly)—no install required.
+
+### Keyboard shortcuts
+
+<kbd>Ctrl</kbd> is <kbd>⌘</kbd> on macOS.
+
+| Action                   | Shortcut                                                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| New level                | <kbd>Ctrl</kbd>+<kbd>N</kbd>                                                                                      |
+| Open                     | <kbd>Ctrl</kbd>+<kbd>O</kbd>                                                                                      |
+| Save / Save As           | <kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>                                      |
+| Screenshot               | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>                                                                     |
+| Close level              | <kbd>Ctrl</kbd>+<kbd>W</kbd>                                                                                      |
+| Undo / Redo              | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> (<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> on macOS) |
+| Cut / Copy / Paste       | <kbd>Ctrl</kbd>+<kbd>X</kbd> / <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd>                        |
+| Select all               | <kbd>Ctrl</kbd>+<kbd>A</kbd>                                                                                      |
+| Delete selection         | <kbd>Delete</kbd>                                                                                                 |
+| Zoom in / out / fit      | <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd>                        |
+| Toggle animation preview | <kbd>Space</kbd>                                                                                                  |
 
 ## Development & contributing
 
