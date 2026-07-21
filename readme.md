@@ -31,7 +31,7 @@ Coming soon.
 - **Direct canvas manipulation**: rotation dials, resize handles, grab rails and radii, mechanical-hand segments, and editable movement paths—drag points to reshape a polyline, right-click one to remove it.
 - **Movement modes**: orbit and polyline paths (up to 99 points) with speed, direction, retrace, and closed-loop control.
 - **Property panel**: per-attribute editors with inline help for the non-obvious ones (rocket impulse, slack-rope factor, water drain, and so on).
-- **Selection and clipboard**: marquee and shift multi-select, select all, cut/copy/paste, delete, and full undo/redo across every edit.
+- **Selection and clipboard**: shift to multi-select, select all, cut/copy/paste, delete, and full undo/redo across every edit.
 - **Snap to grid** for precise placement.
 
 ### Layers
@@ -58,6 +58,7 @@ Coming soon.
 - **Drag and drop to open**: drop a level XML anywhere on the window.
 - **Lossless XML round-trip**: unknown layers and attributes are preserved verbatim, so opening and re-saving a level never rewrites data the editor doesn't understand.
 - **Level validation**: catches missing candy or Om Nom, mismatched candy halves, a night level with no bulb, duplicate `candyNumber`s, grabs bound to nonexistent candies or bulbs, idle ghosts, candy that spawns inside a spike or on Om Nom's mouth, and more—before you save or play.
+- **Review changes**: a diff of the live level against the last save or open, side-by-side or unified, highlighting the exact characters that changed.
 - **Playtest**: launch the level straight into _Cut the Rope: DX_ from the File menu.
 - **Screenshot export**: save a PNG of the level as rendered.
 - **Unsaved-changes protection** on new, open, close, and quit.
