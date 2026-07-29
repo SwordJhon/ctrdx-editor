@@ -10,7 +10,7 @@
 
 _Cut the Rope DX: Level Editor_ is a standalone app for creating and editing levels for _Cut the Rope: DX_.
 
-Try the online version of the editor at <https://yell0wsuit.github.io/ctrdx-editor/> (beta).
+Try the online version of the editor at <https://yell0wsuit.github.io/ctrdx-editor/>.
 
 Inspired by @adriandrummis's [Cut the Rope Level Editor](https://adriandrummis.github.io/CutTheRopeEditor/), it aims to be portable, lightweight, and streamlined to edit with.
 
@@ -28,7 +28,15 @@ The icon is designed by adriandrummis.
 
 ### Download
 
-Coming soon.
+Grab the latest release from the [Releases page](https://github.com/yell0wsuit/ctrdx-editor/releases/latest).
+
+> [!NOTE]
+> Apps downloaded from the internet are usually flagged as "can't be opened" / "damaged" due to macOS security.
+> Go to Settings > Privacy & Security, scroll down to the Security section, and click "Open Anyway".  
+> Alternatively, advanced users can remove the quarantine attribute in Terminal:  
+> `xattr -dr com.apple.quarantine <appname.app>`
+>
+> Linux's AppImage may need `chmod +x <appname.AppImage>` to make it executable.
 
 ## Features
 
