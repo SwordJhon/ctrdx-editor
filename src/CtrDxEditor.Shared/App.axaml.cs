@@ -91,37 +91,126 @@ namespace CtrDxEditor
             _ = WarmUpFilePickerAsync(root);
 
             IContentStore? installed = await _startup.ResolveInstalled();
-            if (installed is not null && await TryShowEditorAsync(root, installed))
+            if (installed is null || !await TryShowEditorAsync(root, installed))
             {
-                return;
+                // Either no content is installed, or installed content passed the cheap existence check
+                // yet failed to actually load (wrong-platform bundle, corrupt atlas, ...): run setup.
+                // Browser setup blocks dismissal because the editor cannot run without content. Keep the
+                // loop as a defensive fallback in case the dialog is removed by some mechanism other than
+                // its normal close path. Desktop instead quits on dismissal.
+                do
+                {
+                    ContentSetupViewModel vm = new(
+                        _startup.Installer,
+                        async () => await TryShowEditorAsync(root, _startup.InstalledStore()),
+                        allowQuit: allowQuit,
+                        allowManualDownload: true,
+                        allowDownload: _startup.AllowDirectDownload,
+                        downloadSizeLabel: _startup.DownloadSizeLabel,
+                        manualDownloadUrl: _startup.ManualDownloadUrl);
+                    ContentSetupDialog dialog = new() { DataContext = vm };
+                    _ = await dialog.ShowAsync();
+
+                    if (allowQuit && root.DataContext is null)
+                    {
+                        // Desktop: dismissing setup without installing quits the app.
+                        desktop?.Shutdown();
+                        return;
+                    }
+                }
+                while (root.DataContext is null);
             }
 
-            // Either no content is installed, or installed content passed the cheap existence check
-            // yet failed to actually load (wrong-platform bundle, corrupt atlas, ...): run setup.
-            // Browser setup blocks dismissal because the editor cannot run without content. Keep the
-            // loop as a defensive fallback in case the dialog is removed by some mechanism other than
-            // its normal close path. Desktop instead quits on dismissal.
-            do
+            // Deliberately not awaited: the editor is already usable, and neither check blocks it.
+            // Reached only once the editor is up, so these can never stack on top of the content setup
+            // dialog the user must complete first.
+            _ = PromptForStaleThingsAsync(root);
+        }
+
+        /// <summary>
+        /// Runs the startup "you are behind" checks in sequence: outdated assets first, then a newer
+        /// editor release.
+        /// </summary>
+        /// <param name="root">Attached control that hosts the dialogs and owns the URI launcher.</param>
+        /// <remarks>
+        /// Sequential and awaited so the two prompts cannot appear at once. Assets come first because
+        /// they are the ones actively costing the user objects in the palette right now.
+        /// </remarks>
+        private async Task PromptForStaleThingsAsync(Control root)
+        {
+            await CheckForStaleAssetsAsync(root);
+            await CheckForUpdateAsync(root);
+        }
+
+        /// <summary>Offers to re-download the asset bundle when the installed one is out of date.</summary>
+        /// <param name="root">Attached control whose data context is replaced if content is reinstalled.</param>
+        /// <remarks>
+        /// Swallows its own failures: an editor that is already running must not be taken down by a
+        /// check about content it is currently managing without.
+        /// </remarks>
+        private async Task CheckForStaleAssetsAsync(Control root)
+        {
+            try
             {
+                if (await _startup.ResolveInstalled() is not { } installed
+                    || !await ContentVersion.IsOutdatedAsync(installed))
+                {
+                    return;
+                }
+
                 ContentSetupViewModel vm = new(
                     _startup.Installer,
-                    async () => await TryShowEditorAsync(root, _startup.InstalledStore()),
-                    allowQuit: allowQuit,
+                    async () =>
+                    {
+                        // Before loading it: resolution prefers a configured content path, so a stale
+                        // one would keep winning and re-prompt on every launch despite the download.
+                        if (_startup.RepointContentLocation is { } repoint)
+                        {
+                            await repoint();
+                        }
+                        _ = await TryShowEditorAsync(root, _startup.InstalledStore());
+                    },
+                    // Optional download: never offer to quit, but always allow backing out - unlike
+                    // first-run setup, the editor behind this dialog already works.
+                    allowQuit: false,
                     allowManualDownload: true,
                     allowDownload: _startup.AllowDirectDownload,
                     downloadSizeLabel: _startup.DownloadSizeLabel,
-                    manualDownloadUrl: _startup.ManualDownloadUrl);
+                    manualDownloadUrl: _startup.ManualDownloadUrl,
+                    canDismiss: true,
+                    isUpdate: true);
+                // The same dialog first-run setup uses, re-labelled: one Download button, one consent,
+                // and the whole install surface (manual download, zip upload, progress, verification,
+                // error reporting) already behaves correctly for a re-download.
                 ContentSetupDialog dialog = new() { DataContext = vm };
                 _ = await dialog.ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CtrDx] Asset update prompt failed; continuing without it.\n{ex}");
+            }
+        }
 
-                if (allowQuit && root.DataContext is null)
+        /// <summary>Offers the release page when GitHub has published a build newer than this one.</summary>
+        /// <param name="root">Attached control that hosts the dialog and owns the URI launcher.</param>
+        /// <remarks>
+        /// Skipped entirely on heads that leave <c>CheckForUpdate</c> null (the browser). Swallows its
+        /// own failures, since it runs unawaited and must never bring startup down with an unobserved
+        /// exception.
+        /// </remarks>
+        private async Task CheckForUpdateAsync(Control root)
+        {
+            try
+            {
+                if (_startup.CheckForUpdate is { } check && await check())
                 {
-                    // Desktop: dismissing setup without installing quits the app.
-                    desktop?.Shutdown();
-                    return;
+                    await UpdatePrompt.ShowAsync(root);
                 }
             }
-            while (root.DataContext is null);
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CtrDx] Update prompt failed; continuing without it.\n{ex}");
+            }
         }
 
         /// <summary>
