@@ -33,6 +33,21 @@ namespace CtrDxEditor.Rendering
                 DashStyle = new DashStyle([4, 3], 0),
             };
 
+        /// <summary>
+        /// Screen-pixel slack added around the viewport when culling objects, absorbing art that overhangs its
+        /// bounds box (duration text, tutorial overhang, glow halos) so nothing pops at the edge.
+        /// </summary>
+        private const double CullMargin = 256;
+
+        /// <summary>
+        /// Whether handles should draw from selection alone rather than waiting for hover. Touch screens
+        /// report no hover, so a hover-gated handle is unreachable: it never appears, so it is never grabbed.
+        /// </summary>
+        private bool ShowHandlesWithoutHover => _lastPointerWasTouch;
+
+        /// <summary>Cross-frame memo for the background layout; see <see cref="BackgroundLayoutCache"/>.</summary>
+        private readonly BackgroundLayoutCache _backgroundLayout = new();
+
         /// <summary>The pixel size and view transform for a clean full-level screenshot.</summary>
         /// <param name="Size">Output bitmap size in pixels (level units x MapScale).</param>
         /// <param name="View">Transform placing the frame's top-left at pixel (0, 0).</param>
@@ -288,7 +303,7 @@ namespace CtrDxEditor.Rendering
             // The water surface doubles as its own drag handle; it only exists when the level has water,
             // so a water-free level shows nothing to grab and the settings dialog is the way in.
             if (WaterGeometry.Band(doc.Width, doc.Height, doc.Water) is { } handleBand
-                && (_waterHandleHovered || _waterDrag))
+                && (_waterHandleHovered || _waterDrag || ShowHandlesWithoutHover))
             {
                 Vec2 left = v.LevelToScreen(new Vec2(handleBand.X, handleBand.Y));
                 Vec2 right = v.LevelToScreen(new Vec2(handleBand.X + handleBand.W, handleBand.Y));
@@ -681,10 +696,13 @@ namespace CtrDxEditor.Rendering
             {
                 Bitmap? p2 = sprites.GetBackgroundP2(ActiveBackground);
                 double p2Aspect = p2 is { Size: { Width: > 0 } p2s } ? p2s.Height / p2s.Width : 0.0;
-                BackgroundLayout layout = BackgroundPlacement.Compute(
-                    doc.Width, doc.Height, bgSize.Height / bgSize.Width,
-                    p2Aspect, SpriteCache.GetBackgroundP2Y(ActiveBackground),
-                    SpriteCache.GetEarthBgPosition(ActiveBackground));
+                double p1Aspect = bgSize.Height / bgSize.Width;
+                BackgroundLayout layout = _backgroundLayout.Get(
+                    doc.Width, doc.Height, ActiveBackground, p1Aspect, p2Aspect,
+                    () => BackgroundPlacement.Compute(
+                        doc.Width, doc.Height, p1Aspect,
+                        p2Aspect, SpriteCache.GetBackgroundP2Y(ActiveBackground),
+                        SpriteCache.GetEarthBgPosition(ActiveBackground)));
 
                 using (context.PushClip(levelClip))
                 {
@@ -821,10 +839,29 @@ namespace CtrDxEditor.Rendering
                 }
                 else
                 {
+                    // Offscreen objects are skipped: at high zoom most of the level lies outside the viewport, and
+                    // drawing it costs a full sprite pass per object for no pixels. Only this branch is culled —
+                    // a grab's rope reaches an arbitrary target, and a vinyl's handles extend past its disc, so
+                    // neither object's own bounds predict where it draws.
+                    //
+                    // The object's drawn position is resolved once here and handed to both the cull and the
+                    // draw. A mover is drawn where preview has carried it, so a cull that re-derived that
+                    // position could disagree and drop the object mid-flight.
+                    double? previewSeconds =
+                        useAnimationPreview && IsAnimationPreviewing(obj) ? AnimationPreviewElapsedSeconds : null;
+                    Vec2 drawOffset = LevelSceneRenderer.DrawOffset(obj, previewSeconds);
+                    LevelBounds cullBounds = LevelSceneRenderer.CullBounds(
+                        sprites, obj, ActiveCandySkin, ActiveOmNomSupport, doc.NightLevel, drawOffset);
+                    if (!LevelSceneRenderer.IsWithinViewport(cullBounds, v, renderSize, CullMargin))
+                    {
+                        continue;
+                    }
+
                     LevelSceneRenderer.DrawObject(context, v, sprites, obj, ActiveCandySkin, ActiveOmNomSupport, doc.NightLevel,
                         ActiveBackground > 0 ? Brushes.Black : _palette.StarDurationText,
                         objects,
-                        useAnimationPreview && IsAnimationPreviewing(obj) ? AnimationPreviewElapsedSeconds : null,
+                        drawOffset,
+                        previewSeconds,
                         opBounds,
                         tutorialDark);
                 }

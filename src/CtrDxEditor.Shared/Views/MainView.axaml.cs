@@ -8,12 +8,14 @@ using Avalonia.Controls;
 using Avalonia.Controls.Notifications;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 using CtrDxEditor.Core.Document;
+using CtrDxEditor.Core.Editing;
 using CtrDxEditor.Rendering;
 using CtrDxEditor.ViewModels;
 
@@ -88,12 +90,17 @@ namespace CtrDxEditor.Views
             canvas.BeginDocumentEdit = () => (DataContext as EditorViewModel)?.BeginUndoTransaction();
             canvas.CompleteDocumentEdit = () => (DataContext as EditorViewModel)?.CompleteUndoTransaction();
             canvas.EditTutorialTextRequested = BeginTextEdit;
+            canvas.PressIntercepted = DismissCompactDrawerOnCanvasPress;
+            EmptyStateView emptyState = this.FindControl<EmptyStateView>("EmptyState")!;
+            emptyState.NewRequested = () => New_Click(this, new RoutedEventArgs());
+            emptyState.OpenRequested = () => Open_Click(this, new RoutedEventArgs());
+            emptyState.UsageGuideRequested = () => UsageGuide_Click(this, new RoutedEventArgs());
 
             // Palette placement is an internal pointer-capture drag (see PaletteDragController). Buttons mark
             // their own left PointerPressed as Handled for click logic, so the handlers are registered with
             // handledEventsToo to still see it.
             _paletteDrag = new PaletteDragController(this, canvas);
-            ItemsControl paletteList = this.FindControl<ItemsControl>("PaletteList")!;
+            ItemsControl paletteList = this.FindControl<PaletteView>("Palette")!.ItemsHost;
             paletteList.AddHandler(
                 PointerPressedEvent, _paletteDrag.OnPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
             paletteList.AddHandler(
@@ -110,6 +117,7 @@ namespace CtrDxEditor.Views
             // globally at the TopLevel (see MainView.Shortcuts.cs). Menu hint text is bound in XAML via
             // ShortcutHint.
             WireLocalShortcuts();
+            WireLayoutMode();
         }
 
         private void WireObjectMutated()
@@ -132,9 +140,21 @@ namespace CtrDxEditor.Views
                 _mutatedSubscription.LevelLoaded += FocusCanvasAfterLevelLoaded;
                 _mutatedSubscription.PropertyChanged += ViewModel_PropertyChanged;
                 SubscribeToSelection(_mutatedSubscription.Selection);
+                // The platform clipboard stays at the view boundary: the view model takes callbacks so it
+                // stays testable without a window. In Avalonia 12 the text accessors are extension methods
+                // on IClipboard (Avalonia.Input.Platform), not members.
+                _mutatedSubscription.WriteClipboardText = async text =>
+                {
+                    if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+                    {
+                        await clipboard.SetTextAsync(text);
+                    }
+                };
             }
 
             SyncAnimationPreviewTimer();
+            // A swapped view model carries its own document state, which the compact chrome is gated on.
+            UpdateCompactChromeVisibility();
         }
 
         private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -147,6 +167,18 @@ namespace CtrDxEditor.Views
             if (e.PropertyName == nameof(EditorViewModel.SelectedTreeItem))
             {
                 Dispatcher.UIThread.Post(BringSelectedTreeItemIntoView, DispatcherPriority.Loaded);
+            }
+
+            if (e.PropertyName == nameof(EditorViewModel.HasDocument))
+            {
+                UpdateCompactChromeVisibility();
+            }
+
+            if (e.PropertyName is nameof(EditorViewModel.CanCutSelection)
+                or nameof(EditorViewModel.CanPaste)
+                or nameof(EditorViewModel.SelectedObject))
+            {
+                UpdateCompactEditBarVisibility();
             }
 
             if (e.PropertyName == nameof(EditorViewModel.EffectivelyLockedObjects))
@@ -421,52 +453,23 @@ namespace CtrDxEditor.Views
         {
             if (_notifications is null && TopLevel.GetTopLevel(this) is { } top)
             {
-                _notifications = new WindowNotificationManager(top)
-                {
-                    Position = NotificationPosition.BottomRight,
-                    // One at a time: showing the terminal toast evicts the sticky "Saving…" one, so the
-                    // screenshot save reads as a single toast that updates in place.
-                    MaxItems = 1,
-                };
+                _notifications = new WindowNotificationManager(top) { MaxItems = 3 };
             }
+
+            // Set per toast rather than once at construction: the host is created lazily, possibly before
+            // the first layout pass has chosen a mode, and the free corner moves with the mode. Compact
+            // spends its bottom edge on the tab bar and edit bar and its top-left on the hamburger, and the
+            // rail takes the top centre, which leaves one corner unclaimed. Expanded has nothing but canvas
+            // down there, so it keeps the conventional corner.
+            if (_notifications is { } host)
+            {
+                host.Position = _layoutMode == LayoutMode.Compact
+                    ? NotificationPosition.TopRight
+                    : NotificationPosition.BottomRight;
+            }
+
             return _notifications;
         }
 
-        private void OnPaletteScrollChanged(object? sender, ScrollChangedEventArgs e)
-        {
-            if (this.FindControl<ScrollViewer>("PaletteScroll") is not { } scroll
-                || this.FindControl<ItemsControl>("PaletteList") is not { } list
-                || this.FindControl<Border>("StickyHeaderHost") is not { } host
-                || this.FindControl<TextBlock>("StickyHeaderText") is not { } text)
-            {
-                return;
-            }
-
-            string? topGroup = null;
-            for (int i = 0; i < list.ItemCount; i++)
-            {
-                if (list.ContainerFromIndex(i) is not Control container)
-                {
-                    continue;
-                }
-                if (container.TranslatePoint(new Point(0, container.Bounds.Height), scroll) is not { } p)
-                {
-                    continue;
-                }
-                // First item whose bottom edge is below the top of the viewport owns the sticky header.
-                if (p.Y > 0 && list.Items[i] is PaletteItemViewModel item)
-                {
-                    topGroup = item.GroupName;
-                    break;
-                }
-            }
-
-            bool scrolled = scroll.Offset.Y > 0.5;
-            host.IsVisible = scrolled && topGroup is not null;
-            if (topGroup is not null)
-            {
-                text.Text = topGroup;
-            }
-        }
     }
 }

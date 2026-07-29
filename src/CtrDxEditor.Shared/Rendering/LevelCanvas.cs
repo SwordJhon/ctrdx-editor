@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 using CtrDxEditor.Content;
 using CtrDxEditor.Core.Document;
@@ -40,6 +41,14 @@ namespace CtrDxEditor.Rendering
         /// <summary>Avalonia property backing <see cref="SnapEnabled"/>.</summary>
         public static readonly StyledProperty<bool> SnapEnabledProperty =
             AvaloniaProperty.Register<LevelCanvas, bool>(nameof(SnapEnabled));
+
+        /// <summary>Avalonia property backing <see cref="RotationSnapEnabled"/>.</summary>
+        public static readonly StyledProperty<bool> RotationSnapEnabledProperty =
+            AvaloniaProperty.Register<LevelCanvas, bool>(nameof(RotationSnapEnabled));
+
+        /// <summary>Avalonia property backing <see cref="IsScrollActive"/>.</summary>
+        public static readonly StyledProperty<bool> IsScrollActiveProperty =
+            AvaloniaProperty.Register<LevelCanvas, bool>(nameof(IsScrollActive));
 
         /// <summary>Avalonia property backing <see cref="SelectedObject"/>.</summary>
         public static readonly StyledProperty<LevelObject?> SelectedObjectProperty =
@@ -149,6 +158,16 @@ namespace CtrDxEditor.Rendering
         /// <summary>Whether object moves and placements snap to the level grid.</summary>
         public bool SnapEnabled { get => GetValue(SnapEnabledProperty); set => SetValue(SnapEnabledProperty, value); }
 
+        /// <summary>Whether rotation-handle drags snap to each object's configured angle step.</summary>
+        public bool RotationSnapEnabled
+        {
+            get => GetValue(RotationSnapEnabledProperty);
+            set => SetValue(RotationSnapEnabledProperty, value);
+        }
+
+        /// <summary>True while the view is being panned or zoomed, driving the scrollbar overlay's fade.</summary>
+        public bool IsScrollActive { get => GetValue(IsScrollActiveProperty); private set => SetValue(IsScrollActiveProperty, value); }
+
         /// <summary>The currently selected object, if any.</summary>
         public LevelObject? SelectedObject { get => GetValue(SelectedObjectProperty); set => SetValue(SelectedObjectProperty, value); }
 
@@ -218,6 +237,25 @@ namespace CtrDxEditor.Rendering
 
         /// <summary>Callback used to place a new object at level coordinates.</summary>
         public Func<string, int, int, LevelObject?>? PlaceAt { get; set; }
+
+        /// <summary>What a primary pointer contact on the canvas does.</summary>
+        /// <remarks>
+        /// Set by the compact shell's rail toggle. <c>MainView</c> resets it to
+        /// <see cref="CanvasInteractionMode.Edit"/> whenever the rail leaves the screen, so a user cannot
+        /// be stranded in a mode whose only exit is hidden.
+        /// </remarks>
+        public CanvasInteractionMode InteractionMode { get; set; } = CanvasInteractionMode.Edit;
+
+        /// <summary>
+        /// Consulted before anything else on a pointer press; returning true swallows the press whole.
+        /// </summary>
+        /// <remarks>
+        /// The compact shell uses this to dismiss an open drawer with a tap on the canvas. The press is
+        /// swallowed rather than acted on because the canvas under a just-dismissed sheet is territory the
+        /// user has not seen: hit-testing it would be a blind hit that could select or deselect something
+        /// they never looked at.
+        /// </remarks>
+        public Func<bool>? PressIntercepted { get; set; }
 
         /// <summary>Callback used to toggle the locked object from canvas gestures.</summary>
         public Action<LevelObject?>? ToggleLock { get; set; }
@@ -457,8 +495,31 @@ namespace CtrDxEditor.Rendering
         /// <summary>Cumulative pinch scale from the previous pinch event, used to derive an incremental zoom factor.</summary>
         private double _lastPinchScale = 1;
 
+#pragma warning disable IDE0032
+        /// <summary>
+        /// Whether the most recent pointer interaction came from a touch contact. Hit tolerance is resolved
+        /// against this so a fingertip gets a larger target than a cursor, without changing mouse behaviour.
+        /// </summary>
+        private bool _lastPointerWasTouch;
+#pragma warning restore IDE0032
+
+        /// <summary>Screen-space position where the current press began, used to measure drag slop.</summary>
+        private Point _pressOrigin;
+
+        /// <summary>
+        /// Whether the current press has moved far enough to count as a drag. Until it has, pointer movement
+        /// is ignored so a tap cannot nudge what it selected.
+        /// </summary>
+        private bool _slopCleared;
+
         /// <summary>Guards scrollbar/<see cref="View"/> sync so a programmatic scroll update doesn't recurse back through property changes.</summary>
         private bool _syncingScroll;
+
+        /// <summary>Clears <see cref="IsScrollActive"/> once the view has been still for <see cref="ScrollIdleDelay"/>.</summary>
+        private DispatcherTimer? _scrollIdleTimer;
+
+        /// <summary>How long the scrollbar overlay stays visible after the last pan or zoom.</summary>
+        private static readonly TimeSpan ScrollIdleDelay = TimeSpan.FromSeconds(1);
 
         /// <summary>True when a fit-to-view is queued, waiting for the control to be laid out with non-zero bounds.</summary>
         private bool _pendingFit;
@@ -512,46 +573,97 @@ namespace CtrDxEditor.Rendering
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
             base.OnPropertyChanged(change);
+
             if (change.Property == DocumentProperty)
             {
-                // Auto-fit only when the level's dimensions change (a fresh load, a new level, or a
-                // resolution change). An undo/redo restore swaps in a re-parsed same-sized document,
-                // and refitting it would throw away the user's current zoom and pan.
-                LevelDocument? oldDoc = change.GetOldValue<LevelDocument?>();
-                LevelDocument? newDoc = change.GetNewValue<LevelDocument?>();
-                if (newDoc is not null
-                    && (oldDoc is null || oldDoc.Width != newDoc.Width || oldDoc.Height != newDoc.Height))
-                {
-                    _pendingFit = true;
-                    TryFit(); // fits immediately if already laid out (later loads); else waits for Bounds.
-                }
-                UpdateScrollState();
+                HandleDocumentChanged(change);
+                return;
             }
-            else if (change.Property == BoundsProperty && _pendingFit)
+
+            if (change.Property == BoundsProperty)
             {
-                TryFit();
+                HandleBoundsChanged(change);
+                return;
             }
-            else if (change.Property == BoundsProperty || change.Property == ViewProperty)
+
+            if (change.Property == ViewProperty)
             {
                 UpdateScrollState();
+                return;
             }
-            else if ((change.Property == HorizontalScrollValueProperty || change.Property == VerticalScrollValueProperty)
-                     && !_syncingScroll)
+
+            bool scrollValueChanged = change.Property == HorizontalScrollValueProperty
+                || change.Property == VerticalScrollValueProperty;
+            if (scrollValueChanged && !_syncingScroll)
             {
                 ScrollTo(HorizontalScrollValue, VerticalScrollValue);
+                return;
             }
-            else if (change.Property == SelectedObjectProperty)
+
+            if (change.Property == SelectedObjectProperty)
             {
-                _ghostPreview.Clear();
-                _ghostIconHits.Clear();
-                _polylinePointDrag = -1;
-                _handActiveSegment = 0;
-                _handHoverJoint = 0;
-                _handHoverSegment = 0;
-                _handSplitPreview = null;
-                ResetPolylineHover();
-                InvalidateVisual();
+                HandleSelectionChanged();
             }
+        }
+
+        /// <summary>Queues or performs the initial fit and refreshes scroll state for a document change.</summary>
+        private void HandleDocumentChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            // Auto-fit only when the level's dimensions change (a fresh load, a new level, or a
+            // resolution change). An undo/redo restore swaps in a re-parsed same-sized document,
+            // and refitting it would throw away the user's current zoom and pan.
+            LevelDocument? oldDoc = change.GetOldValue<LevelDocument?>();
+            LevelDocument? newDoc = change.GetNewValue<LevelDocument?>();
+            if (newDoc is not null
+                && (oldDoc is null || oldDoc.Width != newDoc.Width || oldDoc.Height != newDoc.Height))
+            {
+                _pendingFit = true;
+                TryFit(); // fits immediately if already laid out (later loads); else waits for Bounds.
+            }
+            UpdateScrollState();
+        }
+
+        /// <summary>Fits a pending document or preserves the current viewport center across a resize.</summary>
+        private void HandleBoundsChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            if (_pendingFit)
+            {
+                TryFit();
+                return;
+            }
+
+            Rect oldBounds = change.GetOldValue<Rect>();
+            Rect newBounds = change.GetNewValue<Rect>();
+            if (Document is { } doc
+                && oldBounds.Width > 0
+                && oldBounds.Height > 0
+                && newBounds.Width > 0
+                && newBounds.Height > 0)
+            {
+                View = ViewNavigation.ResizeViewport(
+                    View,
+                    doc.Width,
+                    doc.Height,
+                    oldBounds.Width,
+                    oldBounds.Height,
+                    newBounds.Width,
+                    newBounds.Height);
+            }
+            UpdateScrollState();
+        }
+
+        /// <summary>Clears selection-specific gesture and hover state after the selected object changes.</summary>
+        private void HandleSelectionChanged()
+        {
+            _ghostPreview.Clear();
+            _ghostIconHits.Clear();
+            _polylinePointDrag = -1;
+            _handActiveSegment = 0;
+            _handHoverJoint = 0;
+            _handHoverSegment = 0;
+            _handSplitPreview = null;
+            ResetPolylineHover();
+            InvalidateVisual();
         }
 
         /// <summary>Clears selected-polyline hover chrome and repaints when it was visible.</summary>

@@ -1,6 +1,7 @@
 using System;
 
 using Avalonia;
+using Avalonia.Threading;
 
 using CtrDxEditor.Core.Document;
 using CtrDxEditor.Core.Geometry;
@@ -54,7 +55,13 @@ namespace CtrDxEditor.Rendering
         /// <param name="anchor">Screen-space point that stays fixed under the cursor while zooming.</param>
         public void ZoomBy(double factor, Point anchor)
         {
-            View = ViewNavigation.ZoomBy(View, factor, new Vec2(anchor.X, anchor.Y), 0.1, 10.0);
+            ViewTransform zoomed = ViewNavigation.ZoomBy(View, factor, new Vec2(anchor.X, anchor.Y), 0.1, 10.0);
+            if (Document is { } doc)
+            {
+                zoomed = ViewNavigation.ClampPan(zoomed, doc.Width, doc.Height, Bounds.Width, Bounds.Height);
+            }
+            View = zoomed;
+            MarkScrollActivity();
             UpdateScrollState();
         }
 
@@ -77,7 +84,26 @@ namespace CtrDxEditor.Rendering
             }
 
             View = ViewNavigation.ScrollTo(View, doc.Width, doc.Height, Bounds.Width, Bounds.Height, offsetX, offsetY);
+            MarkScrollActivity();
             UpdateScrollState();
+        }
+
+        /// <summary>Shows the scrollbar overlay and restarts the idle countdown that hides it again.</summary>
+        private void MarkScrollActivity()
+        {
+            IsScrollActive = true;
+            if (_scrollIdleTimer is null)
+            {
+                _scrollIdleTimer = new DispatcherTimer { Interval = ScrollIdleDelay };
+                _scrollIdleTimer.Tick += (_, _) =>
+                {
+                    _scrollIdleTimer.Stop();
+                    IsScrollActive = false;
+                };
+            }
+
+            _scrollIdleTimer.Stop();
+            _scrollIdleTimer.Start();
         }
 
         /// <summary>Recomputes the scrollbar viewport, maximum, and value from the current document and view, without recursing.</summary>
@@ -86,19 +112,13 @@ namespace CtrDxEditor.Rendering
             LevelDocument? doc = Document;
             double viewportWidth = Math.Max(0, Bounds.Width);
             double viewportHeight = Math.Max(0, Bounds.Height);
-            double maxX = 0;
-            double maxY = 0;
-            double valueX = 0;
-            double valueY = 0;
+            ScrollRange horizontal = default;
+            ScrollRange vertical = default;
 
             if (doc is not null)
             {
-                double contentWidth = Math.Max(0, doc.Width * View.Zoom);
-                double contentHeight = Math.Max(0, doc.Height * View.Zoom);
-                maxX = Math.Max(0, contentWidth - viewportWidth);
-                maxY = Math.Max(0, contentHeight - viewportHeight);
-                valueX = Math.Clamp(-View.PanX, 0, maxX);
-                valueY = Math.Clamp(-View.PanY, 0, maxY);
+                horizontal = ViewNavigation.ComputeScrollRange(doc.Width * View.Zoom, viewportWidth, View.PanX);
+                vertical = ViewNavigation.ComputeScrollRange(doc.Height * View.Zoom, viewportHeight, View.PanY);
             }
 
             _syncingScroll = true;
@@ -106,10 +126,10 @@ namespace CtrDxEditor.Rendering
             {
                 HorizontalScrollViewport = viewportWidth;
                 VerticalScrollViewport = viewportHeight;
-                HorizontalScrollMaximum = maxX;
-                VerticalScrollMaximum = maxY;
-                HorizontalScrollValue = valueX;
-                VerticalScrollValue = valueY;
+                HorizontalScrollMaximum = horizontal.Maximum;
+                VerticalScrollMaximum = vertical.Maximum;
+                HorizontalScrollValue = horizontal.Value;
+                VerticalScrollValue = vertical.Value;
             }
             finally
             {

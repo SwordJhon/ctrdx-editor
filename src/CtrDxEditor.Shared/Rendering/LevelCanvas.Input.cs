@@ -18,6 +18,16 @@ namespace CtrDxEditor.Rendering
         private const double WaterHandleTolerance = 6.0;
 
         /// <summary>
+        /// Converts a mouse-sized screen tolerance into a level-space tolerance for the pointer in use.
+        /// </summary>
+        /// <param name="basePx">The tolerance in screen pixels as tuned for the mouse.</param>
+        /// <returns>The tolerance in level units, scaled up for touch and divided by the current zoom.</returns>
+        private double HitTolerance(double basePx)
+        {
+            return View.Zoom <= 0 ? basePx : TouchInput.Tolerance(basePx, _lastPointerWasTouch) / View.Zoom;
+        }
+
+        /// <summary>
         /// Horizontal-resize cursor (col-resize) shown over the auto-catch radius ring or a horizontal rail end/hook.
         /// Created lazily rather than in the static constructor: eager creation would touch Avalonia's cursor factory
         /// at type load, which throws in the headless test host. <see cref="Lazy{T}.Value"/> still allocates the cursor
@@ -54,7 +64,7 @@ namespace CtrDxEditor.Rendering
                 ? GrabRadius.Of(selected)
                 : RadiusRing.Of(selected)?.Radius;
             return radius is double r
-                && GrabRadius.OnEdge(new Vec2(selected.X, selected.Y), r, levelPt, 6 / View.Zoom);
+                && GrabRadius.OnEdge(new Vec2(selected.X, selected.Y), r, levelPt, HitTolerance(6));
         }
 
         /// <summary>Whether a point is over the selected tutorial text's right-edge width handle.</summary>
@@ -69,7 +79,7 @@ namespace CtrDxEditor.Rendering
                 && TutorialTextResize.HitTest(
                     TutorialRenderer.TextBounds(sprites, selected),
                     levelPt,
-                    9 / View.Zoom);
+                    HitTolerance(9));
         }
 
         /// <summary>What part of the selected movable grab's rail a level point is over, or <see cref="GrabRail.Handle.None"/>.</summary>
@@ -86,7 +96,7 @@ namespace CtrDxEditor.Rendering
                 && View.Zoom > 0
                 && GrabRenderer.DrawsMovableRail(sel)
                 && GrabRail.Of(sel) is { } g
-                ? GrabRail.HitTest(g, levelPt, endTolerance: 9 / View.Zoom, hookTolerance: 24, barThickness: 20)
+                ? GrabRail.HitTest(g, levelPt, endTolerance: HitTolerance(9), hookTolerance: 24, barThickness: 20)
                 : GrabRail.Handle.None;
         }
 
@@ -100,8 +110,8 @@ namespace CtrDxEditor.Rendering
                 return SpikeResize.Handle.None;
             }
 
-            double tol = 9 / View.Zoom;
-            double thickness = 12 / View.Zoom;
+            double tol = HitTolerance(9);
+            double thickness = HitTolerance(12);
             return SpikeObject.IsSpike(sel.Type)
                 ? SpikeResize.HitTest(sel, levelPt, StripSpriteScale(sel), tol, thickness)
                 : BouncerObject.IsBouncer(sel.Type)
@@ -115,7 +125,7 @@ namespace CtrDxEditor.Rendering
         private ConveyorGeometry.Handle HitConveyor(Vec2 levelPt)
         {
             return IsSingleSelection && SelectedObject is { } sel && View.Zoom > 0 && ConveyorGeometry.Of(sel) is { } s
-                ? ConveyorGeometry.HitTest(s, levelPt, endTolerance: 9 / View.Zoom, widthTolerance: 9 / View.Zoom)
+                ? ConveyorGeometry.HitTest(s, levelPt, endTolerance: HitTolerance(9), widthTolerance: HitTolerance(9))
                 : ConveyorGeometry.Handle.None;
         }
 
@@ -159,8 +169,27 @@ namespace CtrDxEditor.Rendering
             }
 
             _handDragHasMoved = true;
+            if (_handJointDrag > 0 && _handActiveSegment != _handJointDrag)
+            {
+                // A tap selects the segment whose button starts here; once movement begins, the shared
+                // joint edits the preceding segment that terminates here.
+                ActivateHandSegment(_handJointDrag);
+            }
             BeginDocumentEdit?.Invoke();
             return true;
+        }
+
+        /// <summary>Activates one hand segment for its highlight, rotation dial, and property group.</summary>
+        private void ActivateHandSegment(int index)
+        {
+            if (index <= 0)
+            {
+                return;
+            }
+
+            _handActiveSegment = index;
+            HandSegmentActivated?.Invoke(index);
+            InvalidateVisual();
         }
 
         /// <summary>Moves a hand button by pointer delta so grabbing off-centre never makes it jump.</summary>
@@ -169,18 +198,20 @@ namespace CtrDxEditor.Rendering
             return _handDragStartTarget + (levelPt - _handDragStartPointer);
         }
 
-        /// <summary>Captures stable object and primary origins for a group move.</summary>
-        private void CaptureGroupDragOrigins()
+        /// <summary>Captures stable object and primary origins for a selection or one exclusive object.</summary>
+        private void CaptureGroupDragOrigins(LevelObject? exclusive = null)
         {
             _groupDragOrigins.Clear();
-            IEnumerable<LevelObject> group = SelectedObjects.Count > 0
+            IEnumerable<LevelObject> group = exclusive is not null
+                ? [exclusive]
+                : SelectedObjects.Count > 0
                 ? SelectedObjects
                 : PrimaryObject is { } fallback ? [fallback] : [];
             foreach (LevelObject selected in group)
             {
                 _groupDragOrigins.Add((selected, selected.X, selected.Y));
             }
-            if (PrimaryObject is { } primary)
+            if ((exclusive ?? PrimaryObject) is { } primary)
             {
                 _primaryOriginX = primary.X;
                 _primaryOriginY = primary.Y;
@@ -191,7 +222,7 @@ namespace CtrDxEditor.Rendering
         private VinylGeometry.Handle HitVinylHandle(Vec2 levelPt)
         {
             return IsSingleSelection && SelectedObject is { Type: "rotatedCircle" } vinyl && View.Zoom > 0
-                ? VinylGeometry.HitTest(vinyl, levelPt, 18 / View.Zoom)
+                ? VinylGeometry.HitTest(vinyl, levelPt, HitTolerance(18))
                 : VinylGeometry.Handle.None;
         }
 
@@ -224,8 +255,8 @@ namespace CtrDxEditor.Rendering
             double radius = RotationDialRenderer.RadiusPx / View.Zoom;
             return ObjectRotation.HitTest(
                 target.Center, target.StoredAngle, target.Spec, radius, levelPt,
-                ringTolerance: RotationDialRenderer.RingTolerancePx / View.Zoom,
-                knobTolerance: RotationDialRenderer.KnobTolerancePx / View.Zoom);
+                ringTolerance: HitTolerance(RotationDialRenderer.RingTolerancePx),
+                knobTolerance: HitTolerance(RotationDialRenderer.KnobTolerancePx));
         }
 
         /// <summary>Resolves an ordinary object or the active hand segment into one dial target.</summary>
@@ -238,18 +269,18 @@ namespace CtrDxEditor.Rendering
         }
 
         /// <summary>
-        /// Writes the object's new angle from a dial drag: free (whole degrees) unless <see cref="KeyModifiers.Alt"/>
-        /// is held, which snaps to the spec's step (15°).
+        /// Writes the object's new angle from a dial drag: free (whole degrees) unless rotation snap is
+        /// latched or <see cref="KeyModifiers.Alt"/> is held, which snaps to the target's configured step.
         /// </summary>
         /// <param name="obj">The rotatable object being edited.</param>
         /// <param name="target">Resolved object or hand-segment dial target.</param>
         /// <param name="center">Stable pivot captured when the dial gesture began.</param>
         /// <param name="levelPt">The pointer position in level coordinates.</param>
-        /// <param name="mods">Active keyboard modifiers; Alt enables snapping.</param>
-        private static void ApplyRotation(
+        /// <param name="mods">Active keyboard modifiers; Alt temporarily enables snapping.</param>
+        private void ApplyRotation(
             LevelObject obj, RotationDialTarget target, Vec2 center, Vec2 levelPt, KeyModifiers mods)
         {
-            bool snap = mods.HasFlag(KeyModifiers.Alt);
+            bool snap = RotationSnapEnabled || mods.HasFlag(KeyModifiers.Alt);
             double angle = ObjectRotation.AngleFromPoint(center, levelPt, target.Spec, snap);
             RotationDialTargetResolver.ApplyAngle(obj, target, angle, center);
         }
@@ -353,7 +384,7 @@ namespace CtrDxEditor.Rendering
             (Vec2 Position, bool Rotatable)? preview = null;
             if (IsSingleSelection && altHeld && SelectedObject is { } hand && HandObject.IsHand(hand.Type))
             {
-                double tolerance = 9 / View.Zoom;
+                double tolerance = HitTolerance(9);
                 HandGeometry.Handle hit = HandGeometry.HitTest(hand, levelPt, tolerance, tolerance / 2);
                 if (hit.Kind == HandGeometry.HandleKind.Bone)
                 {
@@ -370,9 +401,9 @@ namespace CtrDxEditor.Rendering
         }
 
         /// <summary>
-        /// Recomputes the hovered-segment tint from a hover point. Marks the bone under the cursor for a plain
-        /// hover over the selected hand, and clears it while Alt is held (a split, not a selection) or off any
-        /// bone. Repaints on a change.
+        /// Recomputes the hovered-segment tint from a hover point. A bone previews itself and a visible
+        /// button previews the segment that starts there, matching click selection. Alt clears the tint
+        /// because a bone hover then previews a split instead. Repaints on a change.
         /// </summary>
         /// <param name="levelPt">The hover position in level units.</param>
         /// <param name="altHeld">Whether the split modifier is currently down.</param>
@@ -381,12 +412,16 @@ namespace CtrDxEditor.Rendering
             int hovered = 0;
             if (IsSingleSelection && !altHeld && SelectedObject is { } hand && HandObject.IsHand(hand.Type))
             {
-                double tolerance = 9 / View.Zoom;
+                double tolerance = HitTolerance(9);
                 HandGeometry.Handle hit = HandGeometry.HitTest(hand, levelPt, tolerance, tolerance / 2);
-                if (hit.Kind == HandGeometry.HandleKind.Bone)
+                hovered = hit.Kind switch
                 {
-                    hovered = hit.Index;
-                }
+                    HandGeometry.HandleKind.None => 0,
+                    HandGeometry.HandleKind.Base or HandGeometry.HandleKind.Joint
+                        => HandGeometry.ButtonSegment(hit, HandObject.SegmentCount(hand)),
+                    HandGeometry.HandleKind.Bone => hit.Index,
+                    _ => throw new InvalidOperationException($"Unknown hand handle kind: {hit.Kind}"),
+                };
             }
 
             if (_handHoverSegment != hovered)
@@ -439,7 +474,7 @@ namespace CtrDxEditor.Rendering
         {
             return IsSingleSelection && SelectedObject is { } obj && View.Zoom > 0 && IsEditablePolyline(obj)
                 && EditablePath.For(obj) is { } path
-                ? path.HitPoint(levelPt, tolerance: 9 / View.Zoom)
+                ? path.HitPoint(levelPt, tolerance: HitTolerance(9))
                 : -1;
         }
 
@@ -453,7 +488,7 @@ namespace CtrDxEditor.Rendering
             }
 
             Vec2[] points = path.Points;
-            double tolerance = 7 / View.Zoom;
+            double tolerance = HitTolerance(7);
             double toleranceSquared = tolerance * tolerance;
             for (int i = 0; i < path.SegmentCount; i++)
             {
@@ -503,7 +538,7 @@ namespace CtrDxEditor.Rendering
             }
 
             Vec2 nub = PolylineNubPoint(obj);
-            double tolerance = 9 / View.Zoom;
+            double tolerance = HitTolerance(9);
             double dx = nub.X - levelPt.X;
             double dy = nub.Y - levelPt.Y;
             return (dx * dx) + (dy * dy) <= tolerance * tolerance;
@@ -524,7 +559,7 @@ namespace CtrDxEditor.Rendering
             }
 
             Vec2 nub = PolylineNubPoint(obj);
-            double tolerance = 22 / View.Zoom;
+            double tolerance = HitTolerance(22);
             double dx = nub.X - levelPt.X;
             double dy = nub.Y - levelPt.Y;
             return (dx * dx) + (dy * dy) <= tolerance * tolerance;
@@ -686,9 +721,35 @@ namespace CtrDxEditor.Rendering
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
             base.OnPointerPressed(e);
+
+            // Ahead of the document check: the shell may want this press even for state the canvas itself
+            // has no opinion about.
+            if (PressIntercepted?.Invoke() == true)
+            {
+                e.Handled = true;
+                return;
+            }
+
             LevelDocument? doc = Document;
             if (doc is null)
             {
+                return;
+            }
+
+            _lastPointerWasTouch = e.Pointer.Type == PointerType.Touch;
+            _pressOrigin = e.GetPosition(this);
+            _slopCleared = false;
+
+            // Pan mode owns the primary contact outright: no hit-testing, and — unlike the empty-space pan
+            // further down — no selection clear, since framing a selected object is the main reason to
+            // reach for the mode and losing the selection on the way would defeat it.
+            if (InteractionMode == CanvasInteractionMode.Pan
+                && (_lastPointerWasTouch || e.GetCurrentPoint(this).Properties.IsLeftButtonPressed))
+            {
+                _panning = true;
+                _panLast = _pressOrigin;
+                e.Pointer.Capture(this);
+                e.Handled = true;
                 return;
             }
 
@@ -706,7 +767,7 @@ namespace CtrDxEditor.Rendering
             {
                 if (IsSingleSelection && SelectedObject is { } rightHand && HandObject.IsHand(rightHand.Type))
                 {
-                    double rightTolerance = 9 / View.Zoom;
+                    double rightTolerance = HitTolerance(9);
                     HandGeometry.Handle rightHandHit = HandGeometry.HitTest(
                         rightHand, levelPt, rightTolerance, rightTolerance / 2);
                     if (rightHandHit.Kind == HandGeometry.HandleKind.Joint)
@@ -834,7 +895,7 @@ namespace CtrDxEditor.Rendering
             HandGeometry.Handle pressedHandHit = new(HandGeometry.HandleKind.None, 0);
             if (IsSingleSelection && SelectedObject is { } pressedHand && HandObject.IsHand(pressedHand.Type))
             {
-                double handTolerance = 9 / View.Zoom;
+                double handTolerance = HitTolerance(9);
                 pressedHandHit = HandGeometry.HitTest(
                     pressedHand, levelPt, handTolerance, handTolerance / 2);
             }
@@ -906,15 +967,15 @@ namespace CtrDxEditor.Rendering
                 {
                     case HandGeometry.HandleKind.Joint:
                         _handJointDrag = pressedHandHit.Index;
-                        _handActiveSegment = pressedHandHit.Index;
+                        ActivateHandSegment(HandGeometry.ButtonSegment(pressedHandHit, HandObject.SegmentCount(handObj)));
                         PrepareHandDrag(levelPt, HandGeometry.Joint(handObj, pressedHandHit.Index));
-                        HandSegmentActivated?.Invoke(pressedHandHit.Index);
                         e.Handled = true;
                         e.Pointer.Capture(this);
                         return;
 
                     case HandGeometry.HandleKind.Base:
                         _handBaseDrag = true;
+                        ActivateHandSegment(HandGeometry.ButtonSegment(pressedHandHit, HandObject.SegmentCount(handObj)));
                         PrepareHandDrag(levelPt, new Vec2(handObj.X, handObj.Y));
                         e.Handled = true;
                         e.Pointer.Capture(this);
@@ -928,11 +989,10 @@ namespace CtrDxEditor.Rendering
                             BeginDocumentEdit?.Invoke();
                             _handSplitPreview = null;
                             _handJointDrag = HandGeometry.SplitBone(handObj, pressedHandHit.Index, levelPt);
-                            _handActiveSegment = _handJointDrag;
+                            ActivateHandSegment(_handJointDrag);
                             _handDragStartPointer = levelPt;
                             _handDragStartTarget = HandGeometry.Joint(handObj, _handJointDrag);
                             _handDragHasMoved = true;
-                            HandSegmentActivated?.Invoke(_handActiveSegment);
                             SelectedObjectMoved?.Invoke();
                             InvalidateVisual();
                             e.Handled = true;
@@ -940,9 +1000,7 @@ namespace CtrDxEditor.Rendering
                             return;
                         }
 
-                        _handActiveSegment = pressedHandHit.Index;
-                        HandSegmentActivated?.Invoke(pressedHandHit.Index);
-                        InvalidateVisual();
+                        ActivateHandSegment(pressedHandHit.Index);
                         e.Handled = true;
                         return;
 
@@ -978,6 +1036,7 @@ namespace CtrDxEditor.Rendering
                 if (li >= 0 && HitBoundContains(locked, bounds[li], levelPt))
                 {
                     SelectedObject = locked;
+                    CaptureGroupDragOrigins(locked);
                     _dragOffset = levelPt - new Vec2(locked.X, locked.Y);
                     _dragging = true;
                     _handObjectDrag = HandObject.IsHand(locked.Type);
@@ -1072,6 +1131,23 @@ namespace CtrDxEditor.Rendering
         {
             base.OnPointerMoved(e);
             Point p = e.GetPosition(this);
+
+            // A press that has not yet travelled past the slop threshold is still a tap. Panning is exempt: it
+            // starts on empty space where there is nothing to nudge, and gating it would make the canvas feel
+            // stuck for the first few pixels of every drag.
+            if (!_slopCleared && !_panning)
+            {
+                if (!TouchInput.ExceedsDragSlop(
+                        new Vec2(_pressOrigin.X, _pressOrigin.Y),
+                        new Vec2(p.X, p.Y),
+                        _lastPointerWasTouch))
+                {
+                    return;
+                }
+
+                _slopCleared = true;
+            }
+
             Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
 
             if (_handJointDrag > 0 && SelectedObject is { } draggedHand)
@@ -1229,7 +1305,7 @@ namespace CtrDxEditor.Rendering
                 HandGeometry.HandleKind hoverHandKind = HandGeometry.HandleKind.None;
                 if (IsSingleSelection && SelectedObject is { } hoverHand && HandObject.IsHand(hoverHand.Type))
                 {
-                    double hoverTolerance = 9 / View.Zoom;
+                    double hoverTolerance = HitTolerance(9);
                     HandGeometry.Handle hoverHit = HandGeometry.HitTest(
                         hoverHand, levelPt, hoverTolerance, hoverTolerance / 2);
                     hoverHandKind = hoverHit.Kind;

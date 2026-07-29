@@ -22,4 +22,96 @@
     <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.DangerPressed}" />
     <Setter Property="Foreground" Value="{DynamicResource EditorBrush.OnPrimary}" />
   </Style>
+
+  <!-- Compact-rail icon button: tighter than the Fluent default so all six fit across a 320px phone. -->
+  <Style Selector="Button.railAction">
+    <Setter Property="Padding" Value="8,4" />
+    <Setter Property="MinWidth" Value="0" />
+  </Style>
+
+  <!-- Edit-bar icon button: full 48px touch target, stretched so five share the width evenly. -->
+  <Style Selector="Button.editBarAction">
+    <Setter Property="MinHeight" Value="48" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+
+  <!-- Command-drawer row: 48px touch target, full-width hit area, left-aligned like a list row. -->
+  <Style Selector="Button.drawerRow">
+    <Setter Property="MinHeight" Value="48" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+
+  <!-- Accent button for a screen's single primary action. -->
+  <Style Selector="Button.primaryAction /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource EditorBrush.Primary}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.Primary}" />
+    <Setter Property="Foreground" Value="{DynamicResource EditorBrush.OnPrimary}" />
+  </Style>
+  <Style Selector="Button.primaryAction:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource EditorBrush.PrimaryHover}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.PrimaryHover}" />
+    <Setter Property="Foreground" Value="{DynamicResource EditorBrush.OnPrimary}" />
+  </Style>
+  <Style Selector="Button.primaryAction:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource EditorBrush.PrimaryPressed}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.PrimaryPressed}" />
+    <Setter Property="Foreground" Value="{DynamicResource EditorBrush.OnPrimary}" />
+  </Style>
+
+  <!-- Section heading above each group of drawer rows. -->
+  <Style Selector="TextBlock.drawerSection">
+    <Setter Property="Margin" Value="14,14,14,4" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource EditorBrush.Text.Subtle}" />
+  </Style>
+
+  <!-- Latched state, shared by the rail's mode pair and the compact drawer tabs. -->
+  <Style Selector="Button.active /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource EditorBrush.PrimaryLow}" />
+    <Setter Property="Foreground" Value="{DynamicResource EditorBrush.Primary}" />
+  </Style>
+
+  <!-- Text-only compact navigation. The presenter is targeted directly because Fluent owns final content
+       alignment and corner geometry inside the button template. -->
+  <Style Selector="Button.compactTab">
+    <Setter Property="MinHeight" Value="48" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0,3,0,0" />
+    <Setter Property="Foreground" Value="{DynamicResource EditorBrush.Text.Subtle}" />
+  </Style>
+  <Style Selector="Button.compactTab /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="CornerRadius" Value="0" />
+  </Style>
+  <Style Selector="Button.compactTab.active /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource EditorBrush.PrimaryLow}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.Primary}" />
+    <Setter Property="BorderThickness" Value="0,3,0,0" />
+    <Setter Property="Foreground" Value="{DynamicResource EditorBrush.Primary}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- Palette row confirming it just placed an object. -->
+  <Style Selector="Button.placed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource EditorBrush.SuccessLow}" />
+  </Style>
 </Styles>

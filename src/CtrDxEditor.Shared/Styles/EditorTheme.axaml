@@ -276,13 +276,17 @@
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Light">
       <Color x:Key="EditorColor.Primary">#155DFC</Color>  <!-- blue-600 -->
+      <Color x:Key="EditorColor.PrimaryHover">#1447E6</Color>  <!-- blue-700 -->
+      <Color x:Key="EditorColor.PrimaryPressed">#193CB8</Color>  <!-- blue-800 -->
       <Color x:Key="EditorColor.PrimaryLow">#DBEAFE</Color>  <!-- blue-100 -->
       <Color x:Key="EditorColor.OnPrimary">#FFFFFF</Color>  <!-- white -->
       <Color x:Key="EditorColor.Danger">#E7000B</Color>  <!-- red-600 -->
       <Color x:Key="EditorColor.DangerHover">#C10007</Color>  <!-- red-700 -->
       <Color x:Key="EditorColor.DangerPressed">#9F0712</Color>  <!-- red-800 -->
       <Color x:Key="EditorColor.DangerText">#E7000B</Color>  <!-- red-600 -->
+      <Color x:Key="EditorColor.SuccessLow">#DCFCE7</Color>  <!-- green-100 -->
       <Color x:Key="EditorColor.SuccessText">#008236</Color>  <!-- green-700 -->
+      <Color x:Key="EditorColor.WarningLow">#FEF3C6</Color>  <!-- amber-100 -->
       <Color x:Key="EditorColor.Warning">#BB4D00</Color>  <!-- amber-700 -->
       <Color x:Key="EditorColor.SurfacePanel">#F8FAFC</Color>  <!-- slate-50 -->
       <Color x:Key="EditorColor.SurfaceDivider">#E2E8F0</Color>  <!-- slate-200 -->
@@ -312,6 +316,7 @@
       <Color x:Key="EditorColor.OverlayHitboxDesktop">#497D00</Color>  <!-- lime-700 -->
       <Color x:Key="EditorColor.OverlayObjectLocked">#C10007</Color>   <!-- red-700 -->
       <Color x:Key="EditorColor.OverlayObjectSelected">#0069A8</Color> <!-- sky-700 -->
+      <Color x:Key="EditorColor.OverlayHandSegmentSelected">#BB4D00</Color> <!-- amber-700 -->
       <Color x:Key="EditorColor.OverlayForceArrow">#7F22FE</Color>     <!-- violet-700 -->
       <Color x:Key="EditorColor.OverlaySpinArrow">#0E7490</Color>      <!-- cyan-700 -->
       <Color x:Key="EditorColor.OverlayOrbitPath">#2563EB</Color>      <!-- blue-600 -->
@@ -326,13 +331,17 @@
 
     <ResourceDictionary x:Key="Dark">
       <Color x:Key="EditorColor.Primary">#2B7FFF</Color>  <!-- blue-500 -->
+      <Color x:Key="EditorColor.PrimaryHover">#51A2FF</Color>  <!-- blue-400 -->
+      <Color x:Key="EditorColor.PrimaryPressed">#155DFC</Color>  <!-- blue-600 -->
       <Color x:Key="EditorColor.PrimaryLow">#162456</Color>  <!-- blue-950 -->
       <Color x:Key="EditorColor.OnPrimary">#FFFFFF</Color>  <!-- white -->
       <Color x:Key="EditorColor.Danger">#E7000B</Color>  <!-- red-600 -->
       <Color x:Key="EditorColor.DangerHover">#FB2C36</Color>  <!-- red-500 -->
       <Color x:Key="EditorColor.DangerPressed">#C10007</Color>  <!-- red-700 -->
       <Color x:Key="EditorColor.DangerText">#FF6467</Color>  <!-- red-400 -->
+      <Color x:Key="EditorColor.SuccessLow">#032E15</Color>  <!-- green-950 -->
       <Color x:Key="EditorColor.SuccessText">#05DF72</Color>  <!-- green-400 -->
+      <Color x:Key="EditorColor.WarningLow">#461901</Color>  <!-- amber-950 -->
       <Color x:Key="EditorColor.Warning">#FFB900</Color>  <!-- amber-400 -->
       <Color x:Key="EditorColor.SurfacePanel">#0F172B</Color>  <!-- slate-900 -->
       <Color x:Key="EditorColor.SurfaceDivider">#314158</Color>  <!-- slate-700 -->
@@ -362,6 +371,7 @@
       <Color x:Key="EditorColor.OverlayHitboxDesktop">#7CCF00</Color>  <!-- lime-500, 9.15 -->
       <Color x:Key="EditorColor.OverlayObjectLocked">#FFA2A2</Color>   <!-- red-300, 9.29 -->
       <Color x:Key="EditorColor.OverlayObjectSelected">#00BCFF</Color> <!-- sky-400, 8.18 -->
+      <Color x:Key="EditorColor.OverlayHandSegmentSelected">#FDC700</Color> <!-- yellow-400, 12.98 -->
       <Color x:Key="EditorColor.OverlayForceArrow">#C4B4FF</Color>     <!-- violet-300, 8.90 -->
       <Color x:Key="EditorColor.OverlaySpinArrow">#67E8F9</Color>      <!-- cyan-300, 11.07 -->
       <Color x:Key="EditorColor.OverlayOrbitPath">#93C5FD</Color>      <!-- blue-300, 8.37 -->
@@ -377,11 +387,15 @@
 
   <!-- Semantic brushes: the public theming API used across the app. -->
   <SolidColorBrush x:Key="EditorBrush.Primary" Color="{DynamicResource EditorColor.Primary}" />
+  <SolidColorBrush x:Key="EditorBrush.PrimaryHover" Color="{DynamicResource EditorColor.PrimaryHover}" />
+  <SolidColorBrush x:Key="EditorBrush.PrimaryPressed" Color="{DynamicResource EditorColor.PrimaryPressed}" />
   <SolidColorBrush x:Key="EditorBrush.PrimaryLow" Color="{DynamicResource EditorColor.PrimaryLow}" />
   <SolidColorBrush x:Key="EditorBrush.OnPrimary" Color="{DynamicResource EditorColor.OnPrimary}" />
   <SolidColorBrush x:Key="EditorBrush.Danger" Color="{DynamicResource EditorColor.Danger}" />
   <SolidColorBrush x:Key="EditorBrush.DangerText" Color="{DynamicResource EditorColor.DangerText}" />
+  <SolidColorBrush x:Key="EditorBrush.SuccessLow" Color="{DynamicResource EditorColor.SuccessLow}" />
   <SolidColorBrush x:Key="EditorBrush.SuccessText" Color="{DynamicResource EditorColor.SuccessText}" />
+  <SolidColorBrush x:Key="EditorBrush.WarningLow" Color="{DynamicResource EditorColor.WarningLow}" />
   <SolidColorBrush x:Key="EditorBrush.DangerHover" Color="{DynamicResource EditorColor.DangerHover}" />
   <SolidColorBrush x:Key="EditorBrush.DangerPressed" Color="{DynamicResource EditorColor.DangerPressed}" />
   <SolidColorBrush x:Key="EditorBrush.Warning" Color="{DynamicResource EditorColor.Warning}" />

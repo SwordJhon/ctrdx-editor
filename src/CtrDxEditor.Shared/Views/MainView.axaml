@@ -10,11 +10,13 @@
         xmlns:icons="using:Material.Icons.Avalonia"
         xmlns:dialogs="using:AvaloniaDialogs.Views"
         x:Class="CtrDxEditor.Views.MainView"
-        x:DataType="vm:EditorViewModel">
-  <dialogs:ReactiveDialogHost x:Name="DialogHost" CloseOnClickAway="False">
+        x:DataType="vm:EditorViewModel"
+        TopLevel.AutoSafeAreaPadding="False">
+  <dialogs:ReactiveDialogHost x:Name="DialogHost" CloseOnClickAway="False"
+                              IsMultipleDialogsEnabled="True">
     <Grid>
       <DockPanel>
-    <Menu DockPanel.Dock="Top">
+    <Menu x:Name="DesktopMenu" DockPanel.Dock="Top">
       <MenuItem Header="{loc:Tr Menu.File}">
         <MenuItem Click="New_Click">
           <MenuItem.Icon>
@@ -38,7 +40,7 @@
             </Grid>
           </MenuItem.Header>
         </MenuItem>
-        <MenuItem Click="Save_Click" IsEnabled="{Binding HasDocument}">
+        <MenuItem Click="Save_Click" IsEnabled="{Binding HasDocument}" IsVisible="{Binding CanSaveInPlace}">
           <MenuItem.Icon>
             <icons:MaterialIcon Kind="ContentSave" />
           </MenuItem.Icon>
@@ -161,6 +163,15 @@
             </Grid>
           </MenuItem.Header>
         </MenuItem>
+        <!-- The clipboard outlives the selection it was filled from and nothing else empties it, so a copy
+             made to move one object leaves Paste live for the rest of the session. No shortcut: it is a
+             deliberate, occasional act, not something to reach for mid-edit. -->
+        <MenuItem Header="{loc:Tr Menu.Edit.ClearClipboard}" Click="ClearClipboard_Click"
+                  IsEnabled="{Binding HasClipboard}">
+          <MenuItem.Icon>
+            <icons:MaterialIcon Kind="ClipboardRemoveOutline" />
+          </MenuItem.Icon>
+        </MenuItem>
         <MenuItem Click="SelectAll_Click" IsEnabled="{Binding CanSelectAllObjects}">
           <MenuItem.Icon>
             <icons:MaterialIcon Kind="SelectAll" />
@@ -181,6 +192,32 @@
             <Grid ColumnDefinitions="*,Auto" MinWidth="170">
               <AccessText Grid.Column="0" Text="{loc:Tr Menu.Edit.Delete}" VerticalAlignment="Center" />
               <TextBlock Grid.Column="1" Text="{x:Static views:ShortcutHint.Delete}" Opacity="0.6" Margin="24,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+          </MenuItem.Header>
+        </MenuItem>
+        <Separator />
+        <!-- Transparent icon placeholders reserve the icon column; checks align at the right edge. -->
+        <MenuItem Click="SnapToggle_Click" IsEnabled="{Binding HasDocument}">
+          <MenuItem.Icon>
+            <Border Width="16" Height="16" Background="Transparent" />
+          </MenuItem.Icon>
+          <MenuItem.Header>
+            <Grid ColumnDefinitions="*,Auto" MinWidth="170">
+              <TextBlock Grid.Column="0" Text="{loc:Tr Menu.Edit.SnapToGrid}" VerticalAlignment="Center" />
+              <icons:MaterialIcon Grid.Column="1" Kind="CheckBold" Width="14" Height="14"
+                                  Margin="24,0,0,0" VerticalAlignment="Center" IsVisible="{Binding SnapEnabled}" />
+            </Grid>
+          </MenuItem.Header>
+        </MenuItem>
+        <MenuItem Click="RotationSnapToggle_Click" IsEnabled="{Binding HasDocument}">
+          <MenuItem.Icon>
+            <Border Width="16" Height="16" Background="Transparent" />
+          </MenuItem.Icon>
+          <MenuItem.Header>
+            <Grid ColumnDefinitions="*,Auto" MinWidth="170">
+              <TextBlock Grid.Column="0" Text="{loc:Tr Menu.Edit.SnapRotation}" VerticalAlignment="Center" />
+              <icons:MaterialIcon Grid.Column="1" Kind="CheckBold" Width="14" Height="14"
+                                  Margin="24,0,0,0" VerticalAlignment="Center" IsVisible="{Binding RotationSnapEnabled}" />
             </Grid>
           </MenuItem.Header>
         </MenuItem>
@@ -250,18 +287,6 @@
         <Separator />
         <!-- Transparent icon placeholder reserves the icon column so the check lines up with the
              zoom shortcuts above; the check sits at the header's right edge via the same MinWidth. -->
-        <MenuItem Click="SnapToggle_Click" IsEnabled="{Binding HasDocument}">
-          <MenuItem.Icon>
-            <Border Width="16" Height="16" Background="Transparent" />
-          </MenuItem.Icon>
-          <MenuItem.Header>
-            <Grid ColumnDefinitions="*,Auto" MinWidth="170">
-              <TextBlock Grid.Column="0" Text="{loc:Tr Menu.View.SnapToGrid}" VerticalAlignment="Center" />
-              <icons:MaterialIcon Grid.Column="1" Kind="CheckBold" Width="14" Height="14"
-                                  Margin="24,0,0,0" VerticalAlignment="Center" IsVisible="{Binding SnapEnabled}" />
-            </Grid>
-          </MenuItem.Header>
-        </MenuItem>
         <MenuItem Click="ShowHitboxesToggle_Click" IsEnabled="{Binding HasDocument}">
           <MenuItem.Icon>
             <Border Width="16" Height="16" Background="Transparent" />
@@ -299,68 +324,27 @@
           </MenuItem.Header>
         </MenuItem>
       </MenuItem>
+      <MenuItem Header="{loc:Tr Menu.Help}">
+        <MenuItem Header="{loc:Tr Menu.Help.UsageGuide}" Click="UsageGuide_Click">
+          <MenuItem.Icon>
+            <icons:MaterialIcon Kind="HelpCircleOutline" />
+          </MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="{loc:Tr Menu.About}" Click="About_Click"
+                  IsVisible="{x:Static views:HelpMenuPolicy.ShowAboutInHelp}">
+          <MenuItem.Icon>
+            <icons:MaterialIcon Kind="InformationOutline" />
+          </MenuItem.Icon>
+        </MenuItem>
+      </MenuItem>
     </Menu>
-    <Grid ColumnDefinitions="200,1,*,1,280">
-      <Border Grid.Column="0" Background="{DynamicResource EditorBrush.Surface.Panel}">
-        <Grid RowDefinitions="Auto,*">
-          <TextBox Grid.Row="0" Margin="6,6,6,4"
-                   IsVisible="{Binding HasDocument, FallbackValue=False}"
-                   Text="{Binding PaletteSearchText, Mode=TwoWay}"
-                   PlaceholderText="{loc:Tr Palette.SearchPlaceholder}">
-            <TextBox.InnerLeftContent>
-              <icons:MaterialIcon Kind="Magnify" Width="16" Height="16" Margin="6,0,0,0"
-                                  Foreground="{DynamicResource EditorBrush.Text.Subtle}" />
-            </TextBox.InnerLeftContent>
-          </TextBox>
-          <Grid Grid.Row="1">
-            <ScrollViewer x:Name="PaletteScroll" HorizontalScrollBarVisibility="Disabled"
-                          VerticalScrollBarVisibility="Auto"
-                          ScrollChanged="OnPaletteScrollChanged">
-              <ItemsControl x:Name="PaletteList" ItemsSource="{Binding PaletteView}" Margin="6,0,6,10">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <StackPanel>
-                      <Border IsVisible="{Binding ShowDivider}" Height="1" Margin="0,8,0,0"
-                              Background="{DynamicResource EditorBrush.Surface.Divider}" />
-                      <TextBlock Text="{Binding GroupName}" FontWeight="Bold"
-                                 IsVisible="{Binding ShowGroupHeader}"
-                                 TextWrapping="Wrap" Margin="2,8,2,4" />
-                      <Button Margin="0,3" Padding="8,6" HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Stretch"
-                              IsEnabled="{Binding Enabled}"
-                              Tag="{Binding Element}">
-                        <Grid ColumnDefinitions="*,Auto">
-                          <ctl:MarqueeTextBlock Grid.Column="0" Text="{Binding DisplayName}"
-                                                ForceActive="{Binding IsDragging}"
-                                                VerticalAlignment="Center" />
-                          <Grid Grid.Column="1" Width="28" Height="28" Margin="6,0,0,0">
-                            <Image Source="{Binding Icon}" Stretch="Uniform" />
-                            <Border IsVisible="{Binding InvertOnDarkTheme}"
-                                    Background="{DynamicResource EditorBrush.TutorialPaletteOverlay}">
-                              <Border.OpacityMask>
-                                <ImageBrush Source="{Binding Icon}" Stretch="Uniform" />
-                              </Border.OpacityMask>
-                            </Border>
-                          </Grid>
-                        </Grid>
-                      </Button>
-                    </StackPanel>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-            <!-- Sticky overlay header: pinned at the top of the scroll area, text updated on scroll. -->
-            <Border x:Name="StickyHeaderHost" VerticalAlignment="Top" IsHitTestVisible="False"
-                    Background="{DynamicResource EditorBrush.Surface.Panel}"
-                    Padding="8,6" IsVisible="False">
-              <TextBlock x:Name="StickyHeaderText" FontWeight="Bold" TextWrapping="Wrap" />
-            </Border>
-          </Grid>
-        </Grid>
-      </Border>
+    <Grid x:Name="EditorSurface" RowDefinitions="*,Auto,Auto">
+      <Grid x:Name="ExpandedColumns" Grid.Row="0" ColumnDefinitions="200,1,*,1,280"
+            IsVisible="{Binding HasDocument}">
+      <views:PaletteView x:Name="Palette" Grid.Column="0" />
       <Border Grid.Column="1" Background="{DynamicResource EditorBrush.Surface.Divider}" />
-      <Grid Grid.Column="2" RowDefinitions="*,Auto" ColumnDefinitions="*,Auto">
-        <render:LevelCanvas Grid.Row="0" Grid.Column="0" x:Name="Canvas" Focusable="True"
+      <Grid Grid.Column="2">
+        <render:LevelCanvas x:Name="Canvas" Focusable="True"
                             ClipToBounds="True"
                             Document="{Binding Document}"
                             HiddenObjects="{Binding EffectivelyHiddenObjects}"
@@ -368,6 +352,7 @@
                             Sprites="{Binding Sprites}"
                             View="{Binding View, Mode=TwoWay}"
                             SnapEnabled="{Binding SnapEnabled}"
+                            RotationSnapEnabled="{Binding RotationSnapEnabled}"
                             ShowHitboxes="{Binding ShowHitboxes}"
                             ShowForceFields="{Binding ShowForceFields}"
                             ShowMovementPaths="{Binding ShowMovementPaths}"
@@ -380,32 +365,110 @@
                             AnimationPreviewElapsedSeconds="{Binding AnimationPreviewElapsedSeconds}"
                             SelectedObject="{Binding SelectedObject, Mode=TwoWay}"
                             LockedObject="{Binding LockedObject, Mode=TwoWay}" />
-        <TextBox Grid.Row="0" Grid.Column="0" x:Name="TextEditor"
+        <TextBox x:Name="TextEditor"
                  IsVisible="False"
                  HorizontalAlignment="Left" VerticalAlignment="Top"
                  AcceptsReturn="True" TextWrapping="Wrap"
                  MinWidth="60" MinHeight="26"
                  KeyDown="TextEditor_KeyDown" LostFocus="TextEditor_LostFocus" />
-        <ScrollBar Grid.Row="0" Grid.Column="1"
-                   Orientation="Vertical"
-                   Minimum="0"
-                   Maximum="{Binding #Canvas.VerticalScrollMaximum}"
-                   Value="{Binding #Canvas.VerticalScrollValue, Mode=TwoWay}"
-                   ViewportSize="{Binding #Canvas.VerticalScrollViewport}"
-                   SmallChange="48"
-                   LargeChange="{Binding #Canvas.VerticalScrollViewport}" />
-        <ScrollBar Grid.Row="1" Grid.Column="0"
-                   Orientation="Horizontal"
-                   Minimum="0"
-                   Maximum="{Binding #Canvas.HorizontalScrollMaximum}"
-                   Value="{Binding #Canvas.HorizontalScrollValue, Mode=TwoWay}"
-                   ViewportSize="{Binding #Canvas.HorizontalScrollViewport}"
-                   SmallChange="48"
-                   LargeChange="{Binding #Canvas.HorizontalScrollViewport}" />
-        <Border Grid.Row="1" Grid.Column="1" Background="{DynamicResource EditorBrush.Surface.Panel}" />
+        <!-- Overlaid rather than laid out in Auto tracks: a bar that takes layout space would resize the
+             viewport as it appears, fighting the cursor-anchored zoom in ViewNavigation.ZoomBy. -->
+        <Grid x:Name="ScrollOverlay" IsHitTestVisible="True">
+          <Grid.Opacity>
+            <MultiBinding Converter="{x:Static conv:ScrollOverlayOpacityConverter.Instance}">
+              <Binding Path="IsScrollActive" ElementName="Canvas" />
+              <Binding Path="IsPointerOver" ElementName="Canvas" />
+            </MultiBinding>
+          </Grid.Opacity>
+          <Grid.Transitions>
+            <Transitions>
+              <DoubleTransition Property="Opacity" Duration="0:0:0.25" />
+            </Transitions>
+          </Grid.Transitions>
+          <ScrollBar Orientation="Vertical"
+                     HorizontalAlignment="Right" VerticalAlignment="Stretch"
+                     Margin="0,0,0,12"
+                     Minimum="0"
+                     Maximum="{Binding #Canvas.VerticalScrollMaximum}"
+                     Value="{Binding #Canvas.VerticalScrollValue, Mode=TwoWay}"
+                     ViewportSize="{Binding #Canvas.VerticalScrollViewport}"
+                     SmallChange="48"
+                     LargeChange="{Binding #Canvas.VerticalScrollViewport}" />
+          <ScrollBar Orientation="Horizontal"
+                     VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
+                     Margin="0,0,12,0"
+                     Minimum="0"
+                     Maximum="{Binding #Canvas.HorizontalScrollMaximum}"
+                     Value="{Binding #Canvas.HorizontalScrollValue, Mode=TwoWay}"
+                     ViewportSize="{Binding #Canvas.HorizontalScrollViewport}"
+                     SmallChange="48"
+                     LargeChange="{Binding #Canvas.HorizontalScrollViewport}" />
+        </Grid>
+
+        <!-- Parented to the canvas column rather than the shell row so "centred" means centred on the
+             canvas. In compact the column widens to the full width, which centres it there too; hosting it
+             a level up left it centred on the window and so 40px off-centre in the expanded layout, where
+             the palette and inspector columns are not the same width. Declared last in the column so it
+             draws over the canvas and takes presses ahead of it. -->
+        <Border x:Name="CompactRail" IsVisible="False"
+                HorizontalAlignment="Center" VerticalAlignment="Top" ZIndex="50"
+                Background="{DynamicResource EditorBrush.Surface.Panel}">
+          <!-- Eight buttons, of which one trailing pair is always mutually exclusive: the latched mode
+               pair and rotation snap, three document actions, then Help on the compact rail or Delete on
+               the expanded one. Delete lives here only in the expanded layout, where there is no edit bar
+               to carry it; on the compact rail it would be the one button whose availability depended on
+               what was selected. Snap, Help and Delete carry x:Name so ApplyRailActionSet can pick the
+               set for the mode. On narrow phones the rail shifts right to clear the hamburger without
+               shrinking these controls further. -->
+          <StackPanel Orientation="Horizontal" Spacing="4" Margin="8,6">
+            <Button x:Name="EditModeButton" Classes="railAction" Click="CompactEditMode_Click"
+                    ToolTip.Tip="{loc:Tr Canvas.Mode.Edit}">
+              <icons:MaterialIcon Kind="Pencil" Width="20" Height="20" />
+            </Button>
+            <Button x:Name="PanModeButton" Classes="railAction" Click="CompactPanMode_Click"
+                    ToolTip.Tip="{loc:Tr Canvas.Mode.Pan}">
+              <icons:MaterialIcon Kind="HandBackRight" Width="20" Height="20" />
+            </Button>
+            <Button x:Name="RotationSnapButton" Classes="railAction"
+                    Classes.active="{Binding RotationSnapEnabled}"
+                    Click="RotationSnapToggle_Click"
+                    ToolTip.Tip="{loc:Tr Menu.Edit.SnapRotation}">
+              <icons:MaterialIcon Kind="AngleAcute" Width="20" Height="20" />
+            </Button>
+            <Border Width="1" Margin="2,4" Background="{DynamicResource EditorBrush.Surface.Divider}" />
+            <Button Classes="railAction" Click="Undo_Click" IsEnabled="{Binding CanUndo}"
+                    ToolTip.Tip="{loc:Tr Menu.Edit.Undo}">
+              <icons:MaterialIcon Kind="Undo" Width="20" Height="20" />
+            </Button>
+            <Button Classes="railAction" Click="Redo_Click" IsEnabled="{Binding CanRedo}"
+                    ToolTip.Tip="{loc:Tr Menu.Edit.Redo}">
+              <icons:MaterialIcon Kind="Redo" Width="20" Height="20" />
+            </Button>
+            <Button Classes="railAction" Click="ZoomFit_Click" IsEnabled="{Binding HasDocument}"
+                    ToolTip.Tip="{loc:Tr Menu.View.ZoomFit}">
+              <icons:MaterialIcon Kind="FitToScreen" Width="20" Height="20" />
+            </Button>
+            <Border x:Name="RailHelpDivider" Width="1" Margin="2,4"
+                    Background="{DynamicResource EditorBrush.Surface.Divider}" />
+            <Button x:Name="RailHelpButton" Classes="railAction" Click="UsageGuide_Click"
+                    ToolTip.Tip="{loc:Tr Menu.Help.UsageGuide}">
+              <icons:MaterialIcon Kind="HelpCircleOutline" Width="20" Height="20" />
+            </Button>
+            <Button x:Name="RailDeleteButton" Classes="railAction" Click="Delete_Click"
+                    IsEnabled="{Binding CanDeleteSelection}"
+                    ToolTip.Tip="{loc:Tr Menu.Edit.Delete}">
+              <icons:MaterialIcon Kind="DeleteOutline" Width="20" Height="20" />
+            </Button>
+          </StackPanel>
+        </Border>
       </Grid>
       <Border Grid.Column="3" Background="{DynamicResource EditorBrush.Surface.Divider}" />
-      <Grid Grid.Column="4" Background="{DynamicResource EditorBrush.Surface.Panel}" RowDefinitions="Auto,2*,Auto,Auto,3*">
+      <!-- Layers and Properties remain one visual inspector in expanded mode, but are sibling controls so
+           compact mode can host either one independently in the bottom sheet. -->
+      <Grid x:Name="InspectorPanel" Grid.Column="4"
+            Background="{DynamicResource EditorBrush.Surface.Panel}"
+            RowDefinitions="2*,Auto,3*">
+      <Grid x:Name="LayersPanel" Grid.Row="0" RowDefinitions="Auto,*,Auto">
         <TextBlock Grid.Row="0" Text="{loc:Tr Panel.Layers}" FontWeight="Bold"
                    VerticalAlignment="Center" Margin="8,8,8,4" />
         <TreeView Grid.Row="1" Margin="4,0,4,4" x:Name="LayersTree"
@@ -694,10 +757,309 @@
                     MinWidth="96" Height="24" Padding="6,0"
                     ToolTip.Tip="{loc:Tr Panel.Language}" />
         </Grid>
-        <Border Grid.Row="3" Height="1" Background="{DynamicResource EditorBrush.Surface.Divider}" Margin="4,0" />
-        <views:PropertyPanel Grid.Row="4" />
       </Grid>
-    </Grid>
+        <Border Grid.Row="1" Height="1" Background="{DynamicResource EditorBrush.Surface.Divider}" Margin="4,0" />
+        <views:PropertyPanel x:Name="PropertiesPanel" Grid.Row="2" />
+      </Grid>
+      </Grid>
+
+      <!-- Mutually exclusive with the editor columns so inactive palette, canvas and property controls do
+           not frame the start surface. Kept in this grid so later compact chrome remains above it. -->
+      <views:EmptyStateView x:Name="EmptyState" Grid.Row="0" IsVisible="{Binding !HasDocument}" />
+
+      <!-- Compact bottom sheet. A plain overlay rather than a DrawerPage: that control is a page-level
+           navigation shell whose template carries its own title bars and pane toggles, which this shell
+           does not want and cannot reliably suppress from outside. Height is set in code from the
+           available space. -->
+      <Border x:Name="CompactSheet" IsVisible="False" Grid.Row="0"
+              VerticalAlignment="Bottom" ZIndex="40"
+              Background="{DynamicResource EditorBrush.Surface.Panel}"
+              BorderBrush="{DynamicResource EditorBrush.Surface.Divider}"
+              BorderThickness="0,1,0,0"
+              CornerRadius="12,12,0,0">
+        <Panel x:Name="DrawerHost" />
+      </Border>
+
+      <!-- Contextual edit bar. Its reserved row stays in thumb reach without covering the canvas. -->
+      <Border x:Name="CompactEditBar" IsVisible="False" Grid.Row="1"
+              VerticalAlignment="Bottom" ZIndex="45"
+              Background="{DynamicResource EditorBrush.Surface.Panel}"
+              BorderBrush="{DynamicResource EditorBrush.Surface.Divider}"
+              BorderThickness="0,1,0,0">
+        <UniformGrid Columns="5" Margin="4,6">
+          <Button Classes="editBarAction" Click="Cut_Click" IsEnabled="{Binding CanCutSelection}"
+                  ToolTip.Tip="{loc:Tr Menu.Edit.Cut, Plain=True}">
+            <icons:MaterialIcon Kind="ContentCut" Width="22" Height="22" />
+          </Button>
+          <Button Classes="editBarAction" Click="Copy_Click" IsEnabled="{Binding CanCopySelection}"
+                  ToolTip.Tip="{loc:Tr Menu.Edit.Copy, Plain=True}">
+            <icons:MaterialIcon Kind="ContentCopy" Width="22" Height="22" />
+          </Button>
+          <Button Classes="editBarAction" Click="Paste_Click" IsEnabled="{Binding CanPaste}"
+                  ToolTip.Tip="{loc:Tr Menu.Edit.Paste, Plain=True}">
+            <icons:MaterialIcon Kind="ContentPaste" Width="22" Height="22" />
+          </Button>
+          <Button Classes="editBarAction" Click="Delete_Click" IsEnabled="{Binding CanDeleteSelection}"
+                  ToolTip.Tip="{loc:Tr Menu.Edit.Delete, Plain=True}">
+            <icons:MaterialIcon Kind="DeleteOutline" Width="22" Height="22" />
+          </Button>
+          <Button Classes="editBarAction" Click="CompactProperties_Click"
+                  IsEnabled="{Binding SelectedObject, Converter={x:Static ObjectConverters.IsNotNull}}"
+                  ToolTip.Tip="{loc:Tr EditBar.Properties}">
+            <icons:MaterialIcon Kind="Cog" Width="22" Height="22" />
+          </Button>
+        </UniformGrid>
+      </Border>
+
+      <Border x:Name="CompactTabs" IsVisible="False" Grid.Row="2"
+              VerticalAlignment="Bottom" ZIndex="50"
+              Background="{DynamicResource EditorBrush.Surface.Card}"
+              BorderBrush="{DynamicResource EditorBrush.Surface.Divider}"
+              BorderThickness="0,1,0,0">
+        <UniformGrid Columns="2" Margin="0">
+          <Button x:Name="PaletteTab" Classes="compactTab" Click="CompactPaletteTab_Click"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Content="{loc:Tr Panel.Objects}" />
+          <Button x:Name="LayersTab" Classes="compactTab" Click="CompactLayersTab_Click"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Content="{loc:Tr Panel.Layers}" />
+        </UniformGrid>
+      </Border>
+
+      <!-- Native Fluent SplitView supplies the overlay pane, light-dismiss layer and open/close motion.
+           It remains a compact-shell overlay rather than becoming the page-level navigation root. -->
+      <SplitView x:Name="CompactCommandDrawer" IsVisible="False" IsPaneOpen="False"
+                 IsHitTestVisible="False"
+                 Grid.RowSpan="3" ZIndex="61"
+                 DisplayMode="Overlay" PanePlacement="Left"
+                 UseLightDismissOverlayMode="True"
+                 PaneBackground="{DynamicResource EditorBrush.Surface.Panel}"
+                 PaneClosed="CompactCommandDrawer_PaneClosed">
+        <SplitView.Pane>
+          <Border x:Name="CompactCommandDrawerPane"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                  BorderBrush="{DynamicResource EditorBrush.Surface.Divider}"
+                  BorderThickness="0,0,1,0"
+                  KeyboardNavigation.TabNavigation="Cycle"
+                  KeyDown="CompactCommandDrawer_KeyDown">
+        <Grid RowDefinitions="48,*">
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Classes="drawerSection" Text="{loc:Tr CommandDrawer.File}" />
+            <StackPanel x:Name="CommandDrawerFileSection">
+              <Button Classes="drawerRow" Click="DrawerNew_Click">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="FilePlusOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.New, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerOpen_Click">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="FolderOpenOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.Open, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerSave_Click"
+                      IsEnabled="{Binding HasDocument}" IsVisible="{Binding CanSaveInPlace}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="ContentSave" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.Save, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerSaveAs_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="ContentSaveEdit" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.SaveAs, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerScreenshot_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="Camera" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.Screenshot, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerReviewChanges_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="FileCompare" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.ReviewChanges, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerPlaytest_Click"
+                      IsVisible="{Binding CanPlaytest}" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="Play" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.Playtest, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerSetDxLocation_Click" IsVisible="{Binding CanPlaytest}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="FolderCogOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.SetDxLocation, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerClose_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="CloseBoxOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.File.Close, Plain=True}" />
+                </Grid>
+              </Button>
+            </StackPanel>
+
+            <TextBlock Classes="drawerSection" Text="{loc:Tr CommandDrawer.Edit}" />
+            <StackPanel x:Name="CommandDrawerEditSection">
+              <Button Classes="drawerRow" Click="DrawerSelectAll_Click" IsEnabled="{Binding CanSelectAllObjects}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="SelectAll" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.Edit.SelectAll, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerClearClipboard_Click" IsEnabled="{Binding HasClipboard}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="ClipboardRemoveOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.Edit.ClearClipboard, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerSnapToggle_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Border Grid.Column="0" Width="20" Height="20" Background="Transparent" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.Edit.SnapToGrid, Plain=True}" />
+                  <icons:MaterialIcon Grid.Column="2" Kind="CheckBold" Width="16" Height="16"
+                                      VerticalAlignment="Center" IsVisible="{Binding SnapEnabled}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerLevelSettings_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="Cog" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.Edit.LevelSettings, Plain=True}" />
+                </Grid>
+              </Button>
+            </StackPanel>
+
+            <TextBlock Classes="drawerSection" Text="{loc:Tr CommandDrawer.View}" />
+            <StackPanel x:Name="CommandDrawerViewSection">
+              <Button Classes="drawerRow" Click="DrawerZoomIn_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="MagnifyPlusOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.View.ZoomIn, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerZoomOut_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="MagnifyMinusOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.View.ZoomOut, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerAnimationPreview_Click"
+                      IsEnabled="{Binding CanToggleAnimationPreview}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <Panel Grid.Column="0" Width="20" Height="20" VerticalAlignment="Center">
+                    <icons:MaterialIcon Kind="PlayArrow" Width="20" Height="20">
+                      <icons:MaterialIcon.IsVisible>
+                        <Binding Path="IsAnimationPreviewActive" Converter="{x:Static BoolConverters.Not}" />
+                      </icons:MaterialIcon.IsVisible>
+                    </icons:MaterialIcon>
+                    <icons:MaterialIcon Kind="Stop" Width="20" Height="20"
+                                        IsVisible="{Binding IsAnimationPreviewActive}" />
+                  </Panel>
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{Binding AnimationPreviewMenuText}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerShowHitboxes_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Border Grid.Column="0" Width="20" Height="20" Background="Transparent" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.View.ShowHitboxes, Plain=True}" />
+                  <icons:MaterialIcon Grid.Column="2" Kind="CheckBold" Width="16" Height="16"
+                                      VerticalAlignment="Center" IsVisible="{Binding ShowHitboxes}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerShowForceFields_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Border Grid.Column="0" Width="20" Height="20" Background="Transparent" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.View.ShowForceFields, Plain=True}" />
+                  <icons:MaterialIcon Grid.Column="2" Kind="CheckBold" Width="16" Height="16"
+                                      VerticalAlignment="Center" IsVisible="{Binding ShowForceFields}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerShowMovementPaths_Click" IsEnabled="{Binding HasDocument}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Border Grid.Column="0" Width="20" Height="20" Background="Transparent" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.View.ShowMovementPaths, Plain=True}" />
+                  <icons:MaterialIcon Grid.Column="2" Kind="CheckBold" Width="16" Height="16"
+                                      VerticalAlignment="Center" IsVisible="{Binding ShowMovementPaths}" />
+                </Grid>
+              </Button>
+            </StackPanel>
+
+            <TextBlock Classes="drawerSection" Text="{loc:Tr CommandDrawer.Help}" />
+            <StackPanel x:Name="CommandDrawerHelpSection">
+              <Button Classes="drawerRow" Click="DrawerUsageGuide_Click">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="HelpCircleOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.Help.UsageGuide, Plain=True}" />
+                </Grid>
+              </Button>
+              <Button Classes="drawerRow" Click="DrawerAbout_Click"
+                      IsVisible="{x:Static views:HelpMenuPolicy.ShowAboutInHelp}">
+                <Grid ColumnDefinitions="Auto,*">
+                  <icons:MaterialIcon Grid.Column="0" Kind="InformationOutline" Width="20" Height="20"
+                                      VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                             Text="{loc:Tr Menu.About, Plain=True}" />
+                </Grid>
+              </Button>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+        </Grid>
+          </Border>
+        </SplitView.Pane>
+      </SplitView>
+
+      <Button x:Name="CompactMenuButton" IsVisible="False" ZIndex="62"
+              HorizontalAlignment="Left" VerticalAlignment="Top"
+              Width="48" Height="48" Padding="0"
+              Background="{DynamicResource EditorBrush.Surface.Panel}"
+              Click="CompactMenuButton_Click"
+              AutomationProperties.Name="{loc:Tr CommandDrawer.Open}">
+        <icons:MaterialIcon Kind="Menu" Width="24" Height="24" />
+      </Button>
+      </Grid>
       </DockPanel>
       <Canvas IsHitTestVisible="False">
         <Image x:Name="RowDragPreview"

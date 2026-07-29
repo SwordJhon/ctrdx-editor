@@ -1,0 +1,72 @@
+using System;
+
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Markup.Xaml;
+
+namespace CtrDxEditor.Views
+{
+    /// <summary>Shown over the canvas while no document is open.</summary>
+    /// <remarks>
+    /// Talks to its host through callbacks rather than by resolving <c>MainView</c> from the visual tree,
+    /// matching how <c>LevelCanvas</c> is already wired. That keeps the control testable on its own and
+    /// stops it depending on where it happens to be parented.
+    /// </remarks>
+    public partial class EmptyStateView : UserControl
+    {
+        /// <summary>Whether the drag-and-drop hint is shown.</summary>
+        public static readonly StyledProperty<bool> ShowDropHintProperty =
+            AvaloniaProperty.Register<EmptyStateView, bool>(nameof(ShowDropHint), defaultValue: true);
+
+        /// <summary>Creates the empty state.</summary>
+        public EmptyStateView()
+        {
+            AvaloniaXamlLoader.Load(this);
+        }
+
+        /// <summary>Whether the drag-and-drop hint is shown.</summary>
+        /// <remarks>
+        /// Set by the host from the platform: dropping needs a local file to drag from, which the desktop
+        /// heads have and the browser head's phones and tablets do not.
+        /// </remarks>
+        public bool ShowDropHint
+        {
+            get => GetValue(ShowDropHintProperty);
+            set => SetValue(ShowDropHintProperty, value);
+        }
+
+        /// <summary>Raised when the New Level button is pressed.</summary>
+        public Action? NewRequested { get; set; }
+
+        /// <summary>Raised when the Open Level button is pressed.</summary>
+        public Action? OpenRequested { get; set; }
+
+        /// <summary>Raised when the Usage Guide button is pressed.</summary>
+        public Action? UsageGuideRequested { get; set; }
+
+        /// <summary>Requests creation of a new level.</summary>
+        /// <param name="sender">Button that raised the event.</param>
+        /// <param name="e">Click event data.</param>
+        private void New_Click(object? sender, RoutedEventArgs e)
+        {
+            NewRequested?.Invoke();
+        }
+
+        /// <summary>Requests opening an existing level.</summary>
+        /// <param name="sender">Button that raised the event.</param>
+        /// <param name="e">Click event data.</param>
+        private void Open_Click(object? sender, RoutedEventArgs e)
+        {
+            OpenRequested?.Invoke();
+        }
+
+        /// <summary>Requests opening the Usage Guide.</summary>
+        /// <param name="sender">Button that raised the event.</param>
+        /// <param name="e">Click event data.</param>
+        private void UsageGuide_Click(object? sender, RoutedEventArgs e)
+        {
+            UsageGuideRequested?.Invoke();
+        }
+    }
+}

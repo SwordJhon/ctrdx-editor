@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Xml.Linq;
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -55,10 +56,23 @@ namespace CtrDxEditor.ViewModels
         /// <summary>Whether this platform can play levels at all; hides the commands when false.</summary>
         public bool CanPlaytest => Playtest is not null;
 
+        /// <summary>
+        /// Whether this platform can overwrite the file a level was opened from; hides Save when false.
+        /// </summary>
+        /// <remarks>
+        /// In the browser this really depends on the engine rather than the platform: Chromium exposes the
+        /// File System Access API, so Avalonia returns a writable handle and Save works, while Safari and
+        /// Firefox fall back to an <c>&lt;input type="file"&gt;</c> whose handle is read-only and throws
+        /// <c>NotAllowedError</c> on write. Rather than ship a Save that quietly works in some browsers and
+        /// fails in others, the browser head standardises on Save As - every save there is a download.
+        /// </remarks>
+        public bool CanSaveInPlace { get; } = !OperatingSystem.IsBrowser();
+
         [ObservableProperty] public partial LevelDocument? Document { get; set; }
         [ObservableProperty] public partial ViewTransform View { get; set; } = ViewTransform.Identity;
         [ObservableProperty] public partial LevelObject? LockedObject { get; set; }
         [ObservableProperty] public partial bool SnapEnabled { get; set; }
+        [ObservableProperty] public partial bool RotationSnapEnabled { get; set; }
         [ObservableProperty] public partial bool ShowHitboxes { get; set; } = true;
         [ObservableProperty] public partial bool ShowForceFields { get; set; } = true;
         [ObservableProperty] public partial bool ShowMovementPaths { get; set; } = true;
@@ -178,7 +192,12 @@ namespace CtrDxEditor.ViewModels
         /// <summary>True when the selected objects can be copied from an open level.</summary>
         public bool CanCopySelection => HasDocument && SelectedObject is not null;
 
-        /// <summary>True when clipboard objects can be pasted into an open level.</summary>
+        /// <summary>True when an open level has copied objects waiting to be pasted into it.</summary>
+        /// <remarks>
+        /// Answers to the in-app buffer alone. The system clipboard is written but never read, so this is a
+        /// fact rather than a guess - which is what the browser needs, since reading there is permission
+        /// gated and cannot be done in time to decide a menu item's enabled state anyway.
+        /// </remarks>
         public bool CanPaste => HasDocument && HasClipboard;
 
         /// <summary>True when the selected objects can be deleted from an open level.</summary>
@@ -574,6 +593,9 @@ namespace CtrDxEditor.ViewModels
         /// <summary>True when the same-window object clipboard contains at least one object.</summary>
         public bool HasClipboard => _clipboard.Count > 0;
 
+        /// <summary>Places text on the system clipboard. Set by the view; null when unavailable.</summary>
+        public Func<string, Task>? WriteClipboardText { get; set; }
+
         /// <summary>Copies detached XML snapshots of the current selection into the object clipboard.</summary>
         public void CopySelection()
         {
@@ -582,6 +604,67 @@ namespace CtrDxEditor.ViewModels
             {
                 _clipboard.Add(new XElement(selected.Element));
             }
+            OnPropertyChanged(nameof(HasClipboard));
+            NotifyEditCommandCapabilities();
+        }
+
+        /// <summary>Copies the selection into the object clipboard and onto the system clipboard.</summary>
+        /// <remarks>
+        /// The system copy exists so a selection can be pasted into a level file, a chat or another tool.
+        /// It is never read back: Paste always works from the buffer filled here.
+        /// </remarks>
+        public async Task CopySelectionAsync()
+        {
+            CopySelection();
+            await PublishClipboardTextAsync();
+        }
+
+        /// <summary>Copies the selection to both clipboards, then deletes the originals.</summary>
+        public async Task CutSelectionAsync()
+        {
+            // Delete before the first await so a slow clipboard permission prompt cannot let a later
+            // selection replace the objects that were copied and are meant to be cut.
+            CopySelection();
+            DeleteSelected();
+            await PublishClipboardTextAsync();
+        }
+
+        /// <summary>Pushes the object clipboard's text to the system clipboard.</summary>
+        private async Task PublishClipboardTextAsync()
+        {
+            if (WriteClipboardText is not { } write)
+            {
+                return;
+            }
+
+            try
+            {
+                await write(ObjectClipboardXml.Write(_clipboard));
+            }
+            // A clipboard the platform refuses - a denied browser permission, most likely - must not take
+            // the copy down with it: the internal buffer is already filled and Paste still works.
+            catch (Exception)
+            {
+                // Intentionally ignored.
+            }
+        }
+
+        /// <summary>Empties the object clipboard, which also takes Paste down with it.</summary>
+        /// <remarks>
+        /// The clipboard is same-session and holds detached XML snapshots, so nothing else ever empties it:
+        /// a copy made to move one object leaves Paste live indefinitely, and on touch that is a live target
+        /// sitting next to Copy. The system clipboard is deliberately left alone - emptying someone's OS
+        /// clipboard from a level editor is out of scope. Guarded on the count so an already-empty clipboard
+        /// does not raise a change no binding needs.
+        /// </remarks>
+        public void ClearClipboard()
+        {
+            if (_clipboard.Count == 0)
+            {
+                return;
+            }
+
+            _clipboard.Clear();
             OnPropertyChanged(nameof(HasClipboard));
             NotifyEditCommandCapabilities();
         }
@@ -597,6 +680,8 @@ namespace CtrDxEditor.ViewModels
         /// Pastes clipboard objects into the active layer with their centroid at the target point, preserving
         /// relative layout, then selects the surviving clones.
         /// </summary>
+        /// <param name="levelX">Target x in level space.</param>
+        /// <param name="levelY">Target y in level space.</param>
         public void PasteAt(int levelX, int levelY)
         {
             if (Document is null || ActiveLayer?.Layer is not { } target || _clipboard.Count == 0)
@@ -604,6 +689,7 @@ namespace CtrDxEditor.ViewModels
                 return;
             }
 
+            // Cloned on the way in, so the buffer keeps its own copies and can be pasted again.
             List<LevelObject> buffered = [.. _clipboard.Select(element => new LevelObject(new XElement(element)))];
             int centerX = (int)buffered.Average(obj => obj.X);
             int centerY = (int)buffered.Average(obj => obj.Y);

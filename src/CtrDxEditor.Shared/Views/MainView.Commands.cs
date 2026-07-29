@@ -48,28 +48,38 @@ namespace CtrDxEditor.Views
             }
         }
 
-        private void Cut_Click(object? sender, RoutedEventArgs e)
+        private async void Cut_Click(object? sender, RoutedEventArgs e)
         {
             if (DataContext is EditorViewModel vm)
             {
-                vm.CutSelection();
+                await vm.CutSelectionAsync();
                 this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
             }
         }
 
-        private void Copy_Click(object? sender, RoutedEventArgs e)
+        private async void Copy_Click(object? sender, RoutedEventArgs e)
         {
-            (DataContext as EditorViewModel)?.CopySelection();
+            if (DataContext is EditorViewModel vm)
+            {
+                await vm.CopySelectionAsync();
+            }
         }
 
         private void Paste_Click(object? sender, RoutedEventArgs e)
         {
-            if (DataContext is EditorViewModel vm)
+            if (DataContext is not EditorViewModel vm)
             {
-                (int pasteX, int pasteY) = _canvas.PasteTargetLevelPoint();
-                vm.PasteAt(pasteX, pasteY);
-                this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
+                return;
             }
+
+            (int pasteX, int pasteY) = _canvas.PasteTargetLevelPoint();
+            vm.PasteAt(pasteX, pasteY);
+            this.FindControl<LevelCanvas>("Canvas")!.InvalidateVisual();
+        }
+
+        private void ClearClipboard_Click(object? sender, RoutedEventArgs e)
+        {
+            (DataContext as EditorViewModel)?.ClearClipboard();
         }
 
         private void SelectAll_Click(object? sender, RoutedEventArgs e)
@@ -86,6 +96,14 @@ namespace CtrDxEditor.Views
             if (DataContext is EditorViewModel vm)
             {
                 vm.SnapEnabled = !vm.SnapEnabled;
+            }
+        }
+
+        private void RotationSnapToggle_Click(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is EditorViewModel vm)
+            {
+                vm.RotationSnapEnabled = !vm.RotationSnapEnabled;
             }
         }
 

@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 using CtrDxEditor.Content;
 using CtrDxEditor.Core.Document;
@@ -127,6 +129,118 @@ namespace CtrDxEditor.Tests
             Assert.Contains(nameof(EditorViewModel.CanCopySelection), changed);
             Assert.Contains(nameof(EditorViewModel.CanPaste), changed);
             Assert.Contains(nameof(EditorViewModel.CanDeleteSelection), changed);
+        }
+
+        /// <summary>Clearing the buffer takes Paste with it, because the buffer is all Paste ever reads.</summary>
+        [Fact]
+        public void ClearClipboardWithdrawsPaste()
+        {
+            EditorViewModel vm = Load("<bubble x=\"10\" y=\"20\"/>");
+            vm.Selection.Replace(vm.Document!.AllObjects[0]);
+            vm.CopySelection();
+            Assert.True(vm.CanPaste);
+
+            List<string?> changed = [];
+            vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+            vm.ClearClipboard();
+
+            Assert.False(vm.HasClipboard);
+            Assert.False(vm.CanPaste);
+            Assert.Contains(nameof(EditorViewModel.HasClipboard), changed);
+            Assert.Contains(nameof(EditorViewModel.CanPaste), changed);
+
+            // The buffer is genuinely gone, not just reported empty.
+            vm.PasteAt(100, 200);
+            _ = Assert.Single(vm.Document.AllObjects);
+        }
+
+        /// <summary>Clearing an already-empty clipboard raises nothing.</summary>
+        [Fact]
+        public void ClearClipboardOnAnEmptyBufferIsSilent()
+        {
+            EditorViewModel vm = Load("<bubble x=\"10\" y=\"20\"/>");
+            List<string?> changed = [];
+            vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+            vm.ClearClipboard();
+
+            Assert.False(vm.HasClipboard);
+            Assert.Empty(changed);
+        }
+
+        /// <summary>Copy fills both stores, so the two can never disagree about which is fresher.</summary>
+        [Fact]
+        public async Task CopyWritesTheSelectionToTheSystemClipboard()
+        {
+            EditorViewModel vm = Load("<bubble x=\"10\" y=\"20\"/>");
+            string? written = null;
+            vm.WriteClipboardText = text => { written = text; return Task.CompletedTask; };
+            vm.Selection.Replace(vm.Document!.AllObjects[0]);
+
+            await vm.CopySelectionAsync();
+
+            Assert.True(vm.HasClipboard);
+            Assert.Contains("<bubble", written);
+            Assert.Contains("x=\"10\"", written);
+        }
+
+        /// <summary>Paste stands down until something is copied inside the editor.</summary>
+        /// <remarks>
+        /// The system clipboard is write-only: objects go out so they can be pasted elsewhere, and nothing
+        /// ever comes back in. Paste therefore answers to the internal buffer alone, on every platform,
+        /// which is also what keeps the browser from having to guess at a clipboard it may not read.
+        /// </remarks>
+        [Fact]
+        public void PasteIsUnavailableUntilSomethingIsCopiedInTheEditor()
+        {
+            EditorViewModel vm = Load("<bubble x=\"10\" y=\"20\"/>");
+
+            Assert.False(vm.HasClipboard);
+            Assert.False(vm.CanPaste);
+
+            vm.Selection.Replace(vm.Document!.AllObjects[0]);
+            vm.CopySelection();
+
+            Assert.True(vm.CanPaste);
+        }
+
+        /// <summary>A clipboard the platform will not accept still leaves the copy usable in the editor.</summary>
+        [Fact]
+        public async Task CopySurvivesAClipboardWriteThatThrows()
+        {
+            EditorViewModel vm = Load("<bubble x=\"10\" y=\"20\"/>");
+            vm.Selection.Replace(vm.Document!.AllObjects[0]);
+            vm.WriteClipboardText = _ => throw new InvalidOperationException("denied");
+
+            await vm.CopySelectionAsync();
+
+            Assert.True(vm.HasClipboard);
+            Assert.True(vm.CanPaste);
+
+            vm.PasteAt(100, 200);
+
+            Assert.Equal(2, vm.Document!.AllObjects.Count);
+            Assert.Equal("bubble", vm.Selection.Primary!.Type);
+        }
+
+        /// <summary>Cut deletes the selection it copied even when publishing to the platform clipboard is delayed.</summary>
+        [Fact]
+        public async Task CutDeletesTheCopiedSelectionWhenSelectionChangesDuringClipboardWrite()
+        {
+            EditorViewModel vm = Load("<bubble x=\"10\" y=\"20\"/><star x=\"30\" y=\"40\"/>");
+            TaskCompletionSource published = new();
+            vm.WriteClipboardText = _ => published.Task;
+            LevelObject bubble = vm.Document!.AllObjects[0];
+            LevelObject star = vm.Document.AllObjects[1];
+            vm.Selection.Replace(bubble);
+
+            Task cut = vm.CutSelectionAsync();
+            vm.Selection.Replace(star);
+            published.SetResult();
+            await cut;
+
+            Assert.DoesNotContain(bubble, vm.Document.AllObjects);
+            Assert.Contains(star, vm.Document.AllObjects);
         }
     }
 }

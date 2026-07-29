@@ -1,0 +1,297 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CtrDxEditor.ViewModels"
+             xmlns:guide="using:CtrDxEditor.UsageGuide"
+             xmlns:loc="using:CtrDxEditor.Localization"
+             xmlns:controls="using:CtrDxEditor.Controls"
+             xmlns:icons="using:Material.Icons.Avalonia"
+             x:Class="CtrDxEditor.Views.UsageGuideView"
+             x:CompileBindings="True"
+             x:DataType="vm:UsageGuideViewModel">
+  <UserControl.Styles>
+    <Style Selector="Button.tocRow">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="3,0,0,0" />
+      <Setter Property="CornerRadius" Value="0,4,4,0" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Margin" Value="0,1" />
+    </Style>
+    <Style Selector="Button.tocRow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EditorBrush.Surface.CardHover}" />
+    </Style>
+    <Style Selector="Button.tocRow:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EditorBrush.Surface.CardPressed}" />
+    </Style>
+    <!-- The rail is carried by the border every row already reserves, so marking one costs no layout
+    shift; hover keeps changing the fill, which is what keeps the two states apart. -->
+    <Style Selector="Button.tocRow.reading /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.Primary}" />
+    </Style>
+    <Style Selector="Button.tocRow.reading TextBlock.tocTitle">
+      <Setter Property="Foreground" Value="{DynamicResource EditorBrush.Primary}" />
+    </Style>
+    <Style Selector="Border.guideCallout">
+      <Setter Property="BorderThickness" Value="3,0,0,0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="16,12" />
+      <Setter Property="Margin" Value="0,6" />
+    </Style>
+    <Style Selector="Border.guideCallout.tip">
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.SuccessText}" />
+      <Setter Property="Background" Value="{DynamicResource EditorBrush.SuccessLow}" />
+    </Style>
+    <Style Selector="Border.guideCallout.note">
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.Primary}" />
+      <Setter Property="Background" Value="{DynamicResource EditorBrush.PrimaryLow}" />
+    </Style>
+    <Style Selector="Border.guideCallout.warning">
+      <Setter Property="BorderBrush" Value="{DynamicResource EditorBrush.Warning}" />
+      <Setter Property="Background" Value="{DynamicResource EditorBrush.WarningLow}" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="guide:GuideParagraph">
+      <controls:GuideTextBlock Markup="{Binding Text}" TextWrapping="Wrap"
+                               FontSize="15" LineHeight="23" />
+    </DataTemplate>
+    <DataTemplate DataType="guide:GuideHeading">
+      <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                 FontSize="22" FontWeight="SemiBold" Margin="0,14,0,0" />
+    </DataTemplate>
+    <DataTemplate DataType="guide:GuideSteps">
+      <ItemsControl ItemsSource="{Binding Items}" Margin="0,4,0,0">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:CompileBindings="False">
+            <Grid ColumnDefinitions="Auto,*" Margin="0,5">
+              <Border Grid.Column="0" Width="24" Height="24" CornerRadius="12"
+                      Background="{DynamicResource EditorBrush.PrimaryLow}">
+                <TextBlock Text="•" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontWeight="Bold" />
+              </Border>
+              <controls:GuideTextBlock Grid.Column="1" Markup="{Binding .}" TextWrapping="Wrap"
+                                       FontSize="15" LineHeight="23" Margin="12,0,0,0" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </DataTemplate>
+    <DataTemplate DataType="guide:GuideCallout">
+      <Border Classes="guideCallout"
+              Classes.tip="{Binding IsTip}"
+              Classes.note="{Binding IsNote}"
+              Classes.warning="{Binding IsWarning}">
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
+          <controls:GuideTextBlock Markup="{Binding Text}" TextWrapping="Wrap" LineHeight="21" />
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+    <DataTemplate DataType="guide:GuideShortcutTable">
+      <ItemsControl ItemsSource="{Binding Items}" Grid.IsSharedSizeScope="True">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="guide:GuideShortcut">
+            <Grid ColumnDefinitions="*,Auto" Margin="0,5">
+              <TextBlock Grid.Column="0" Text="{Binding Action}" TextWrapping="Wrap"
+                         VerticalAlignment="Center" />
+              <Border Grid.Column="1" Margin="18,0,0,0" Padding="8,4" CornerRadius="5"
+                      Background="{DynamicResource EditorBrush.Surface.Card}">
+                <TextBlock Text="{Binding Keys}" FontFamily="avares://CtrDxEditor.Shared/Assets/Fonts/RobotoMono-Regular.ttf#Roboto Mono"
+                           FontSize="12" />
+              </Border>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </DataTemplate>
+    <DataTemplate DataType="guide:GuideScreenshot">
+      <StackPanel Spacing="8" Margin="0,8">
+        <Image Source="{Binding Image}" IsVisible="{Binding ShowImage}"
+               MaxHeight="420" Stretch="Uniform" />
+        <Border IsVisible="{Binding ShowPlaceholder}"
+                MinHeight="190" BorderThickness="1" BorderBrush="{DynamicResource EditorBrush.Surface.Divider}"
+                Background="{DynamicResource EditorBrush.Surface.Card}" CornerRadius="10">
+          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Margin="24">
+            <icons:MaterialIcon Kind="ImageOutline" Width="36" Height="36" Opacity="0.55" />
+            <TextBlock Text="{loc:Tr Guide.Screenshot.Placeholder}" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="{loc:Tr Guide.Screenshot.AddLater}" Opacity="0.65"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding SuggestedFileName}"
+                       FontFamily="avares://CtrDxEditor.Shared/Assets/Fonts/RobotoMono-Regular.ttf#Roboto Mono"
+                       FontSize="12" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+        <controls:GuideTextBlock Markup="{Binding Caption}" TextWrapping="Wrap"
+                                 TextAlignment="Center" FontStyle="Italic" Opacity="0.7" />
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource EditorBrush.Surface.Panel}">
+    <Border Grid.Row="0" BorderBrush="{DynamicResource EditorBrush.Surface.Divider}"
+            BorderThickness="0,0,0,1" Background="{DynamicResource EditorBrush.Surface.Panel}">
+      <Grid x:Name="GuideToolbarGrid"
+            RowDefinitions="Auto,Auto"
+            ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
+            Margin="10,7">
+        <Button x:Name="SidebarButton" Grid.Column="0" Width="40" Height="40" Padding="0"
+                Click="SidebarButton_Click">
+          <icons:MaterialIcon Kind="Menu" Width="20" Height="20" />
+        </Button>
+        <Button x:Name="BackButton" Grid.Column="1" Width="40" Height="40" Padding="0"
+                Margin="6,0,0,0" Click="BackButton_Click" IsEnabled="{Binding CanGoBack}"
+                ToolTip.Tip="{loc:Tr Guide.Navigation.Back}">
+          <icons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
+        </Button>
+        <Button x:Name="ForwardButton" Grid.Column="2" Width="40" Height="40" Padding="0"
+                Click="ForwardButton_Click" IsEnabled="{Binding CanGoForward}"
+                ToolTip.Tip="{loc:Tr Guide.Navigation.Forward}">
+          <icons:MaterialIcon Kind="ChevronRight" Width="22" Height="22" />
+        </Button>
+        <Button x:Name="HomeButton" Grid.Column="3" Width="40" Height="40" Padding="0"
+                Margin="6,0,0,0" Click="HomeButton_Click"
+                ToolTip.Tip="{loc:Tr Guide.Navigation.Home}">
+          <icons:MaterialIcon Kind="HomeOutline" Width="20" Height="20" />
+        </Button>
+        <TextBlock Grid.Column="4" Text="{loc:Tr Dialog.UsageGuide.Title}"
+                   FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="14,0" />
+        <TextBox x:Name="GuideSearchBox" Grid.Column="5"
+                 Text="{Binding SearchText, Mode=TwoWay}"
+                 KeyDown="GuideSearchBox_KeyDown"
+                 MaxWidth="360" Height="36" Margin="8,0,0,0"
+                 HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                 VerticalContentAlignment="Center" Padding="0,0,12,0"
+                 PlaceholderText="{loc:Tr Guide.Search.Placeholder}">
+          <TextBox.InnerLeftContent>
+            <icons:MaterialIcon Kind="Magnify" Width="18" Height="18"
+                                Margin="10,0,6,0" Opacity="0.6" />
+          </TextBox.InnerLeftContent>
+        </TextBox>
+      </Grid>
+    </Border>
+
+    <SplitView x:Name="GuideSplitView" Grid.Row="1"
+               DisplayMode="Inline" PanePlacement="Left"
+               IsPaneOpen="True" OpenPaneLength="300"
+               UseLightDismissOverlayMode="True"
+               PaneBackground="{DynamicResource EditorBrush.Surface.Panel}"
+               PaneOpened="GuideSplitView_PaneOpened"
+               PaneClosed="GuideSplitView_PaneClosed">
+      <SplitView.Pane>
+        <Grid RowDefinitions="Auto,*" Width="300">
+          <TextBlock Grid.Row="0" Text="{loc:Tr Guide.Navigation.Contents}"
+                     FontSize="20" FontWeight="SemiBold" Margin="18,18,18,10" />
+          <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto" Margin="8,0,8,12">
+            <ItemsControl x:Name="TableOfContents" ItemsSource="{Binding TocRows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:GuideTocRow">
+                  <Button Classes="tocRow" Classes.reading="{Binding IsActive}"
+                          Tag="{Binding Id}" Click="TableOfContentsRow_Click"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="{Binding Section}" FontSize="11" Opacity="0.58" />
+                      <TextBlock Classes="tocTitle" Text="{Binding Title}"
+                                 FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Summary}" FontSize="12" Opacity="0.68"
+                                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Grid>
+      </SplitView.Pane>
+
+      <Grid>
+        <ScrollViewer x:Name="SearchResultsScroll"
+                      IsVisible="{Binding IsSearchActive}"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="780" HorizontalAlignment="Center"
+                      Margin="40,34,40,70" Spacing="12">
+            <TextBlock Text="{loc:Tr Guide.Search.Results}" FontSize="34"
+                       FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding SearchResults.Count, StringFormat={loc:Tr Guide.Search.ResultCount}}"
+                       FontSize="15" Opacity="0.68" Margin="0,0,0,8" />
+            <ItemsControl x:Name="SearchResults"
+                          ItemsSource="{Binding SearchResults}"
+                          IsVisible="{Binding HasSearchResults}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:GuideSearchResult">
+                  <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                          Tag="{Binding Id}" Click="SearchResult_Click"
+                          Margin="0,3" Padding="14,11">
+                    <StackPanel Spacing="5">
+                      <controls:SearchHighlightTextBlock
+                        SourceText="{Binding Section}" Query="{Binding Query}"
+                        HighlightBrush="{DynamicResource EditorBrush.WarningLow}"
+                        FontSize="12" Foreground="{DynamicResource EditorBrush.Primary}"
+                        FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <controls:SearchHighlightTextBlock
+                        SourceText="{Binding Title}" Query="{Binding Query}"
+                        HighlightBrush="{DynamicResource EditorBrush.WarningLow}"
+                        FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <controls:SearchHighlightTextBlock
+                        SourceText="{Binding Summary}" Query="{Binding Query}"
+                        HighlightBrush="{DynamicResource EditorBrush.WarningLow}"
+                        FontSize="14" Opacity="0.72" TextWrapping="Wrap" LineHeight="21" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StackPanel IsVisible="{Binding HasNoSearchResults}"
+                        HorizontalAlignment="Center" Margin="24,52" Spacing="10">
+              <icons:MaterialIcon Kind="MagnifyClose" Width="36" Height="36"
+                                  HorizontalAlignment="Center" Opacity="0.5" />
+              <TextBlock Text="{loc:Tr Guide.Search.NoResults}" FontSize="18"
+                         FontWeight="SemiBold" HorizontalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+
+        <ScrollViewer x:Name="ArticleScroll"
+                      IsVisible="{Binding IsArticleVisible}"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="780" HorizontalAlignment="Center"
+                      Margin="40,34,40,70" Spacing="12">
+            <TextBlock Text="{Binding SelectedArticle.Section}" FontSize="13"
+                       Foreground="{DynamicResource EditorBrush.Primary}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding SelectedArticle.Title}" FontSize="34"
+                       FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding SelectedArticle.Summary}" FontSize="17"
+                       Opacity="0.72" TextWrapping="Wrap" LineHeight="25" Margin="0,0,0,12" />
+            <ItemsControl ItemsSource="{Binding SelectedArticle.Blocks}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="11" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <StackPanel Spacing="8" Margin="0,22,0,0"
+                        IsVisible="{Binding HasRelatedArticles}">
+              <TextBlock Text="{loc:Tr Guide.Article.Related}" FontSize="20" FontWeight="SemiBold" />
+              <ItemsControl ItemsSource="{Binding RelatedArticles}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="guide:GuideArticle">
+                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Tag="{Binding Id}" Click="RelatedTopic_Click" Margin="0,2">
+                      <StackPanel>
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Summary}" Opacity="0.68" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </SplitView>
+  </Grid>
+</UserControl>
