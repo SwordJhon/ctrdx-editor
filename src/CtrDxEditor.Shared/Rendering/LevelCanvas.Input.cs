@@ -82,24 +82,6 @@ namespace CtrDxEditor.Rendering
                     HitTolerance(9));
         }
 
-        /// <summary>What part of the selected movable grab's rail a level point is over, or <see cref="GrabRail.Handle.None"/>.</summary>
-        /// <remarks>
-        /// The hit-testing itself lives in <see cref="GrabRail"/>; here we only supply the selected grab's geometry and
-        /// the screen-derived tolerances: ~9 px for the end caps, the hook's own footprint, and the bar's half thickness.
-        /// </remarks>
-        /// <param name="levelPt">The point to test, in level coordinates.</param>
-        /// <returns>The rail handle under the point, or <see cref="GrabRail.Handle.None"/>.</returns>
-        private GrabRail.Handle HitRail(Vec2 levelPt)
-        {
-            return IsSingleSelection
-                && SelectedObject is { Type: "grab" } sel
-                && View.Zoom > 0
-                && GrabRenderer.DrawsMovableRail(sel)
-                && GrabRail.Of(sel) is { } g
-                ? GrabRail.HitTest(g, levelPt, endTolerance: HitTolerance(9), hookTolerance: 24, barThickness: 20)
-                : GrabRail.Handle.None;
-        }
-
         /// <summary>What part of the selected spike/bouncer resize affordance a level point is over.</summary>
         /// <param name="levelPt">The point to test, in level coordinates.</param>
         /// <returns>The strip resize handle under the point, or <see cref="SpikeResize.Handle.None"/>.</returns>
@@ -285,70 +267,12 @@ namespace CtrDxEditor.Rendering
             RotationDialTargetResolver.ApplyAngle(obj, target, angle, center);
         }
 
-        /// <summary>
-        /// Applies the active rail drag to the grab: sliding moves the hook (object x/y) and its offset together so the
-        /// rail stays put; resizing an end rewrites <c>moveLength</c> (and <c>moveOffset</c> for the near end). All
-        /// constrained by <see cref="GrabRail"/> so the hook never leaves the rail.
-        /// </summary>
-        /// <param name="grab">The grab object being edited.</param>
-        /// <param name="g">The grab's current rail geometry.</param>
-        /// <param name="levelPt">The pointer position in level coordinates.</param>
-        private void ApplyRailDrag(LevelObject grab, GrabRail.Geometry g, Vec2 levelPt)
-        {
-            switch (_railDrag)
-            {
-                case GrabRail.Handle.SlideHook:
-                    (double hookAxis, double offset) = GrabRail.SlideHook(g, levelPt);
-                    if (g.Vertical)
-                    {
-                        grab.Y = (int)Math.Round(hookAxis);
-                    }
-                    else
-                    {
-                        grab.X = (int)Math.Round(hookAxis);
-                    }
-                    grab.SetAttr("moveOffset", Whole(offset));
-                    break;
-                case GrabRail.Handle.ResizeEnd:
-                    grab.SetAttr("moveLength", Whole(GrabRail.ResizeEnd(g, levelPt)));
-                    break;
-                case GrabRail.Handle.ResizeStart:
-                    (double offA, double length) = GrabRail.ResizeStart(g, levelPt);
-                    grab.SetAttr("moveOffset", Whole(offA));
-                    grab.SetAttr("moveLength", Whole(length));
-                    break;
-                case GrabRail.Handle.MoveBar:
-                case GrabRail.Handle.None:
-                default:
-                    break;
-            }
-        }
-
         /// <summary>Rounds a level-space value to a whole number and formats it with the invariant culture for an attribute.</summary>
         /// <param name="value">The value to round and format.</param>
         /// <returns>The rounded integer as an invariant-culture string.</returns>
         private static string Whole(double value)
         {
             return ((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture);
-        }
-
-        /// <summary>
-        /// The cursor for a rail handle: a horizontal rail end/hook reads as a horizontal resize, a vertical one as a
-        /// vertical resize (the hook slides along the same axis). The bar keeps the default arrow — it is still
-        /// draggable to move the whole grab, but a move cursor over the whole rail is noisy.
-        /// </summary>
-        /// <param name="handle">The rail handle under the cursor.</param>
-        /// <returns>The cursor to display for that handle.</returns>
-        private Cursor CursorForHandle(GrabRail.Handle handle)
-        {
-            return handle switch
-            {
-                GrabRail.Handle.ResizeStart or GrabRail.Handle.ResizeEnd or GrabRail.Handle.SlideHook =>
-                    SelectedObject is { } s && GrabRail.Vertical(s) ? VResizeCursor : ResizeCursor,
-                GrabRail.Handle.MoveBar => Cursor.Default,
-                GrabRail.Handle.None => Cursor.Default,
-                _ => Cursor.Default,
-            };
         }
 
         /// <summary>Cursor for a strip resize handle based on the object's current rotation.</summary>
@@ -866,6 +790,16 @@ namespace CtrDxEditor.Rendering
                     break;
             }
 
+            // The rope knob resizes the rope's rest length. Like the rail it beats object hit-testing: it is
+            // a small deliberate target that can legitimately sit over other art. The cord is handled much
+            // further down, at empty-space priority.
+            (RopeLength.Handle ropeHandle, double ropeParameter) = HitRope(levelPt);
+            if (ropeHandle == RopeLength.Handle.Knob && BeginRopeDrag(ropeHandle, ropeParameter, levelPt))
+            {
+                e.Pointer.Capture(this);
+                return;
+            }
+
             SpikeResize.Handle stripHandle = HitStripResize(levelPt);
             if (stripHandle != SpikeResize.Handle.None && SelectedObject is { } stripResizeObj)
             {
@@ -1068,6 +1002,15 @@ namespace CtrDxEditor.Rendering
                     return;
                 }
 
+                // Nothing was hit, so the rope may claim the press. Deliberately below object hit-testing:
+                // the cord sweeps across the level and must never steal a click from art beneath it.
+                if (ropeHandle == RopeLength.Handle.Cord
+                    && BeginRopeDrag(ropeHandle, ropeParameter, levelPt))
+                {
+                    e.Pointer.Capture(this);
+                    return;
+                }
+
                 if (SelectionRequested is { } clearSelection)
                 {
                     clearSelection(new SelectionRequest(SelectionRequestKind.Clear, null));
@@ -1229,6 +1172,14 @@ namespace CtrDxEditor.Rendering
                 return;
             }
 
+            if (_ropeDrag != RopeLength.Handle.None && SelectedObject is { } ropeGrab)
+            {
+                ApplyRopeDrag(ropeGrab, levelPt, e.KeyModifiers);
+                SelectedObjectMoved?.Invoke();
+                InvalidateVisual();
+                return;
+            }
+
             if (_stripResizeDrag != SpikeResize.Handle.None && SelectedObject is { } stripObj)
             {
                 ApplyStripResize(stripObj, levelPt);
@@ -1287,6 +1238,8 @@ namespace CtrDxEditor.Rendering
                 // Reflect the affordance under the cursor so ring resize / rail edit are discoverable, and
                 // light up the hook when it's hovered.
                 GrabRail.Handle handle = HitRail(levelPt);
+                (RopeLength.Handle ropeHover, _) = HitRope(levelPt);
+                SetRopeHovered(ropeHover != RopeLength.Handle.None);
                 SetHookHovered(handle == GrabRail.Handle.SlideHook);
                 ObjectRotation.Handle dial = HitRotationDial(levelPt);
                 SpikeResize.Handle stripHandle = HitStripResize(levelPt);
@@ -1343,6 +1296,7 @@ namespace CtrDxEditor.Rendering
                     : conveyorHover != ConveyorGeometry.Handle.None ? ResizeCursor
                     : OnRadiusEdge(levelPt) ? ResizeCursor
                     : handle != GrabRail.Handle.None ? CursorForHandle(handle)
+                    : ropeHover != RopeLength.Handle.None ? new Cursor(StandardCursorType.Hand)
                     : _waterHandleHovered ? VResizeCursor
                     : Cursor.Default;
                 return;
@@ -1402,7 +1356,8 @@ namespace CtrDxEditor.Rendering
             // progress; skip the resets and completion callback unless a gesture is actually active.
             bool gestureActive = _dragging || _panning || _resizingRadius || _resizingTutorialText || _polylinePointDrag > 0
                 || _handJointDrag > 0 || _handBaseDrag
-                || _railDrag != GrabRail.Handle.None || _stripResizeDrag != SpikeResize.Handle.None
+                || _railDrag != GrabRail.Handle.None || _ropeDrag != RopeLength.Handle.None
+                || _stripResizeDrag != SpikeResize.Handle.None
                 || _conveyorDrag != ConveyorGeometry.Handle.None
                 || _vinylHandleDrag != VinylGeometry.Handle.None || _rotating || _hookHovered || _waterDrag;
             if (!gestureActive)
@@ -1419,7 +1374,8 @@ namespace CtrDxEditor.Rendering
             bool editedDocument = (_dragging && (!_handObjectDrag || _handDragHasMoved))
                 || _resizingRadius || _resizingTutorialText || _polylinePointDrag > 0
                 || handHandleEdited
-                || _railDrag != GrabRail.Handle.None || _stripResizeDrag != SpikeResize.Handle.None
+                || _railDrag != GrabRail.Handle.None || _ropeDrag != RopeLength.Handle.None
+                || _stripResizeDrag != SpikeResize.Handle.None
                 || _conveyorDrag != ConveyorGeometry.Handle.None
                 || _vinylHandleDrag != VinylGeometry.Handle.None || _rotating || _waterDrag;
             _dragging = false;
@@ -1437,6 +1393,8 @@ namespace CtrDxEditor.Rendering
             _tutorialTextResizeStartPointerX = 0;
             _tutorialTextResizeGrabOffsetX = 0;
             _railDrag = GrabRail.Handle.None;
+            _ropeDrag = RopeLength.Handle.None;
+            _ropeDragState = default;
             _stripResizeDrag = SpikeResize.Handle.None;
             _conveyorDrag = ConveyorGeometry.Handle.None;
             _vinylHandleDrag = VinylGeometry.Handle.None;
@@ -1454,6 +1412,7 @@ namespace CtrDxEditor.Rendering
                 CompleteDocumentEdit?.Invoke();
             }
             // Letting go ends the "grabbed" look; a fresh hover re-lights it if the cursor is on the hook.
+            SetRopeHovered(false);
             SetHookHovered(false);
         }
 
@@ -1462,6 +1421,7 @@ namespace CtrDxEditor.Rendering
         {
             base.OnPointerExited(e);
             SetHookHovered(false); // don't leave the hook lit when the cursor leaves the canvas
+            SetRopeHovered(false); // nor the rope knob ring
             SetDialKnobHovered(false); // nor the rotation knob
             SetVinylHandleHovered(VinylGeometry.Handle.None); // nor the vinyl handle glow
             ResetPolylineHover();

@@ -409,6 +409,23 @@ namespace CtrDxEditor.Rendering
         /// </summary>
         private GrabRail.Handle _railDrag;
 
+        /// <summary>
+        /// Which rope handle the current drag is manipulating, or <see cref="RopeLength.Handle.None"/> when
+        /// no rope drag is in progress. Both handles write the same <c>length</c> attribute; the distinction
+        /// only matters for where each is allowed to win a press.
+        /// </summary>
+        private RopeLength.Handle _ropeDrag;
+
+        /// <summary>
+        /// The active rope drag's fixed state, captured when the press landed: where on the cord it is
+        /// anchored, where the press was, and the length at that moment. The solvers work as an offset from
+        /// this, so the gesture neither slides along the rope nor rewrites the length just for being touched.
+        /// </summary>
+        private RopeLength.Drag _ropeDragState;
+
+        /// <summary>Whether the cursor is over the selected grab's rope, so the knob shows its hover ring.</summary>
+        private bool _ropeHovered;
+
         /// <summary>Which selected spike end is being dragged to choose a new spike size.</summary>
         private SpikeResize.Handle _stripResizeDrag;
 
@@ -663,6 +680,7 @@ namespace CtrDxEditor.Rendering
             _handHoverSegment = 0;
             _handSplitPreview = null;
             ResetPolylineHover();
+            SetRopeHovered(false);
             InvalidateVisual();
         }
 
