@@ -436,6 +436,9 @@ namespace CtrDxEditor.Rendering
             {
                 DrawPolylineLimitHint(context, v, limitObj);
             }
+
+            // Last, so no handle or outline paints over the number the drag is reporting.
+            DrawDragReadout(context, v);
         }
 
         /// <summary>Draws the selected tutorial text's wrap-width handle.</summary>
@@ -458,131 +461,6 @@ namespace CtrDxEditor.Rendering
                 new Point(screen.X, screen.Y),
                 5,
                 5);
-        }
-
-        /// <summary>Rounded dark plate behind every on-canvas badge, opaque enough to read over level art.</summary>
-        private static readonly IBrush BadgePlate = new SolidColorBrush(Color.FromArgb(225, 25, 29, 36));
-
-        /// <summary>Badge height in screen pixels. Shared so every badge reads as the same component.</summary>
-        private const double BadgeHeight = 26;
-
-        /// <summary>Corner radius of a badge plate, in screen pixels.</summary>
-        private const float BadgeRadius = 6;
-
-        /// <summary>Horizontal breathing room between a badge's text and each of its edges, in screen pixels.</summary>
-        private const double BadgePadding = 13;
-
-        /// <summary>Gap between a badge and whatever it is anchored to, in screen pixels.</summary>
-        private const double BadgeGap = 12;
-
-        /// <summary>
-        /// Builds badge text in the shared badge type style. The size is fixed rather than scaled by zoom:
-        /// a badge is chrome sitting on top of the level, not part of it.
-        /// </summary>
-        /// <param name="text">The label to render.</param>
-        /// <param name="foreground">Brush for the text.</param>
-        /// <returns>The formatted text, ready to measure or draw.</returns>
-        private static FormattedText BadgeLabel(string text, IBrush foreground)
-        {
-            return new FormattedText(
-                text,
-                CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight,
-                new Typeface(FontFamily.DefaultFontFamilyName, FontStyle.Normal, FontWeight.SemiBold),
-                12,
-                foreground);
-        }
-
-        /// <summary>
-        /// Draws a one-value badge in the shared style, centered above <paramref name="anchor"/>. Used for
-        /// live drag readouts, where the number is feedback the geometry alone cannot give.
-        /// </summary>
-        /// <param name="context">Target drawing context.</param>
-        /// <param name="value">The value to show.</param>
-        /// <param name="anchor">Screen point the badge sits above.</param>
-        private static void DrawValueBadge(DrawingContext context, string value, Point anchor)
-        {
-            FormattedText label = BadgeLabel(value, Brushes.White);
-            double width = label.Width + (BadgePadding * 2);
-            Rect plate = new(
-                anchor.X - (width / 2), anchor.Y - BadgeHeight - BadgeGap, width, BadgeHeight);
-            context.FillRectangle(BadgePlate, plate, BadgeRadius);
-            context.DrawText(
-                label,
-                new Point(plate.Center.X - (label.Width / 2), plate.Center.Y - (label.Height / 2)));
-        }
-
-        /// <summary>Draws the selected ghost's enabled-state selector badge and records its hit targets.</summary>
-        private void DrawGhostBadge(DrawingContext context, ViewTransform v, LevelObject ghost, Point[] outline)
-        {
-            IReadOnlyList<GhostMorph> states = GhostStates.Enabled(ghost);
-            if (states.Count == 0)
-            {
-                return;
-            }
-
-            const double height = BadgeHeight;
-            const double cellPadding = 14;
-            const double separatorGap = 10;
-
-            // Measure each state's localized label (reusing the object names) so the badge fits its
-            // text in any language instead of assuming fixed-width abbreviations.
-            FormattedText[] labels = new FormattedText[states.Count];
-            double[] cellWidths = new double[states.Count];
-            double contentWidth = 0;
-            for (int i = 0; i < states.Count; i++)
-            {
-                labels[i] = BadgeLabel(GhostMorphLabel(states[i]), Brushes.White);
-                cellWidths[i] = labels[i].Width + cellPadding;
-                contentWidth += cellWidths[i];
-            }
-
-            double separatorsWidth = Math.Max(0, states.Count - 1) * separatorGap;
-            double width = contentWidth + separatorsWidth + 12;
-            double centerX = v.LevelToScreen(new Vec2(ghost.X, ghost.Y)).X;
-            double top = outline.Min(p => p.Y) - height - 12;
-            Rect bubble = new(centerX - (width / 2), top, width, height);
-            context.FillRectangle(BadgePlate, bubble, BadgeRadius);
-
-            double x = bubble.X + 6;
-            for (int i = 0; i < states.Count; i++)
-            {
-                GhostMorph morph = states[i];
-                Rect hit = new(x, top + 3, cellWidths[i], height - 6);
-                if (_ghostPreview.Active == morph)
-                {
-                    context.FillRectangle(new SolidColorBrush(Color.FromArgb(220, 46, 139, 255)), hit, 4);
-                }
-
-                context.DrawText(labels[i], new Point(hit.Center.X - (labels[i].Width / 2), hit.Center.Y - (labels[i].Height / 2)));
-                _ghostIconHits.Add((hit, morph));
-                x += cellWidths[i];
-
-                if (i < states.Count - 1)
-                {
-                    FormattedText separator = new(
-                        "|",
-                        CultureInfo.CurrentCulture,
-                        FlowDirection.LeftToRight,
-                        new Typeface(FontFamily.DefaultFontFamilyName),
-                        12,
-                        Brushes.LightGray);
-                    context.DrawText(separator, new Point(x + 2, top + ((height - separator.Height) / 2)));
-                    x += separatorGap;
-                }
-            }
-        }
-
-        /// <summary>The localized selector label for a ghost morph, matching its property-panel toggle.</summary>
-        private static string GhostMorphLabel(GhostMorph morph)
-        {
-            return morph switch
-            {
-                GhostMorph.Grab => Localizer.AttributeName("grab"),
-                GhostMorph.Bubble => Localizer.AttributeName("bubble"),
-                GhostMorph.Bouncer => Localizer.AttributeName("bouncer"),
-                _ => "?",
-            };
         }
 
         /// <summary>Draws the active ghost morph in place of the ordinary ghost sprite.</summary>
@@ -943,9 +821,9 @@ namespace CtrDxEditor.Rendering
         }
 
         /// <summary>
-        /// Draws the selected grab's rope-length knob on its cord, plus the live length badge while the
-        /// rope is being dragged. A taut rope's knob is hollow: every length at or below the straight-line
-        /// gap draws the same cord, so past that point the badge is the only feedback there is.
+        /// Draws the selected grab's rope-length knob on its cord. A taut rope's knob is hollow: every length
+        /// at or below the straight-line gap draws the same cord, so past that point the shared drag readout
+        /// is the only feedback there is.
         /// </summary>
         /// <param name="context">Target drawing context.</param>
         /// <param name="v">Current level-to-screen transform.</param>
@@ -964,12 +842,6 @@ namespace CtrDxEditor.Rendering
             if (_ropeHovered || dragging)
             {
                 context.DrawEllipse(null, _palette.OrbitPathArrow, center, 8, 8);
-            }
-
-            if (dragging)
-            {
-                DrawValueBadge(
-                    context, ((int)Math.Round(g.Length)).ToString(CultureInfo.InvariantCulture), center);
             }
         }
 

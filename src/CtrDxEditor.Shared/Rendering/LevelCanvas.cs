@@ -467,6 +467,27 @@ namespace CtrDxEditor.Rendering
         /// <summary>True while the hand's base is being dragged.</summary>
         private bool _handBaseDrag;
 
+        /// <summary>
+        /// True while any object-editing drag is in flight. Chrome that competes with the drag readout for
+        /// the slot above the selection — currently the ghost morph selector — hides while this holds.
+        /// Panning and marquee selection are excluded: they change no property, so no readout appears and
+        /// there is nothing to yield to.
+        /// </summary>
+        private bool AnyDragActive =>
+            _dragging
+            || _rotating
+            || _resizingRadius
+            || _resizingTutorialText
+            || _waterDrag
+            || _handBaseDrag
+            || _handJointDrag > 0
+            || _polylinePointDrag > 0
+            || _ropeDrag != RopeLength.Handle.None
+            || _railDrag != GrabRail.Handle.None
+            || _stripResizeDrag != SpikeResize.Handle.None
+            || _conveyorDrag != ConveyorGeometry.Handle.None
+            || _vinylHandleDrag != VinylGeometry.Handle.None;
+
         /// <summary>True when the ordinary object-drag path is moving a mechanical hand.</summary>
         private bool _handObjectDrag;
 
@@ -528,6 +549,17 @@ namespace CtrDxEditor.Rendering
         /// is ignored so a tap cannot nudge what it selected.
         /// </summary>
         private bool _slopCleared;
+
+        /// <summary>
+        /// Whether the current press has travelled far enough for its drag readout badge to appear.
+        /// <para>
+        /// Distinct from <see cref="_slopCleared"/>, which gates <em>editing</em> and on mouse clears on any
+        /// movement at all — see <see cref="TouchInput.ExceedsDragSlop"/>. That makes it useless as a
+        /// click-versus-drag test on the desktop: nearly every click moves the cursor a little, so a badge
+        /// gated on it flashes up on plain clicks.
+        /// </para>
+        /// </summary>
+        private bool _readoutArmed;
 
         /// <summary>Guards scrollbar/<see cref="View"/> sync so a programmatic scroll update doesn't recurse back through property changes.</summary>
         private bool _syncingScroll;

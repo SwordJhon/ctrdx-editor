@@ -663,6 +663,7 @@ namespace CtrDxEditor.Rendering
             _lastPointerWasTouch = e.Pointer.Type == PointerType.Touch;
             _pressOrigin = e.GetPosition(this);
             _slopCleared = false;
+            _readoutArmed = false;
 
             // Pan mode owns the primary contact outright: no hit-testing, and — unlike the empty-space pan
             // further down — no selection clear, since framing a selected object is the main reason to
@@ -1091,6 +1092,14 @@ namespace CtrDxEditor.Rendering
                 _slopCleared = true;
             }
 
+            // Separate, larger threshold for the readout badge: the slop test above lets any mouse movement
+            // through, so gating the badge on it would flash a badge on ordinary clicks.
+            if (!_readoutArmed)
+            {
+                _readoutArmed = DragReadout.IsArmed(
+                    new Vec2(_pressOrigin.X, _pressOrigin.Y), new Vec2(p.X, p.Y));
+            }
+
             Vec2 levelPt = View.ScreenToLevel(new Vec2(p.X, p.Y));
 
             if (_handJointDrag > 0 && SelectedObject is { } draggedHand)
@@ -1414,6 +1423,12 @@ namespace CtrDxEditor.Rendering
             // Letting go ends the "grabbed" look; a fresh hover re-lights it if the cursor is on the hook.
             SetRopeHovered(false);
             SetHookHovered(false);
+
+            // Every flag cleared above changes what the canvas draws: the drag readout badge goes away and
+            // the ghost morph selector comes back. The hover setters only repaint when their value actually
+            // changed, so this cannot be left to them — after a plain object drag neither one changed, and
+            // the final frame of the drag would stay on screen until something unrelated invalidated.
+            InvalidateVisual();
         }
 
         /// <inheritdoc />
