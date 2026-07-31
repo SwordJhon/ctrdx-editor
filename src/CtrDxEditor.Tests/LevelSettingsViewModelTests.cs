@@ -84,6 +84,67 @@ namespace CtrDxEditor.Tests
             Assert.Equal(700, vm.ToSettings().Height);
         }
 
+        /// <summary>A new level starts unnamed, and a name typed in reaches the settings trimmed.</summary>
+        [Fact]
+        public void LevelNameIsBlankByDefaultAndTrimmedOnConfirm()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            Assert.Equal(string.Empty, vm.ToSettings().LevelName);
+
+            vm.LevelName = "  Spider Season  ";
+            Assert.Equal("Spider Season", vm.ToSettings().LevelName);
+        }
+
+        /// <summary>Edit mode prefills the existing level name so it survives an unrelated settings change.</summary>
+        [Fact]
+        public void EditModePrefillsLevelName()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForEdit(
+                new LevelSettings(640, 480, 1.0f, 0, false, false, LevelName: "Bath Time"));
+
+            Assert.Equal("Bath Time", vm.LevelName);
+            Assert.Equal("Bath Time", vm.ToSettings().LevelName);
+        }
+
+        /// <summary>A new level starts at the game's gravity defaults and carries edited values through.</summary>
+        [Fact]
+        public void GravityDefaultsToEarthAndRoundTrips()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+
+            LevelSettings defaults = vm.ToSettings();
+            Assert.Equal(LevelGravity.DefaultX, defaults.GravityX);
+            Assert.Equal(LevelGravity.DefaultY, defaults.GravityY);
+
+            vm.GravityX = -60m;
+            vm.GravityY = 0m;
+            LevelSettings edited = vm.ToSettings();
+            Assert.Equal(-60f, edited.GravityX);
+            Assert.Equal(0f, edited.GravityY);
+
+            Assert.Equal(0m, LevelSettingsViewModel.ForEdit(edited).GravityY);
+        }
+
+        /// <summary>Out-of-range or unparseable gravity blocks confirmation instead of silently clamping.</summary>
+        [Fact]
+        public void GravityOutOfRangeBlocksConfirm()
+        {
+            LevelSettingsViewModel vm = LevelSettingsViewModel.ForNew();
+            Assert.True(vm.CanConfirm);
+
+            vm.GravityYText = "99999";
+            Assert.True(vm.HasGravityYError);
+            Assert.False(vm.CanConfirm);
+
+            vm.GravityYText = "784";
+            Assert.False(vm.HasGravityYError);
+            Assert.True(vm.CanConfirm);
+
+            vm.GravityXText = "";
+            Assert.True(vm.HasGravityXError);
+            Assert.False(vm.CanConfirm);
+        }
+
         /// <summary>The special dropdown offers None (0), Default (1), and a Custom sentinel, defaulting to None.</summary>
         [Fact]
         public void SpecialOffersNoneDefaultAndCustom()

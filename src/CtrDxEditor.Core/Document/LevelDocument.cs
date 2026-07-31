@@ -54,13 +54,17 @@ namespace CtrDxEditor.Core.Document
                 gameDesignEl.SetAttributeValue("useMobilePhysics", "true");
             }
             ApplyWater(gameDesignEl, settings);
+            ApplyGravity(gameDesignEl, settings);
+
+            XElement mapEl = new("map",
+                new XAttribute("gridSize", "32"),
+                new XAttribute("width", settings.Width.ToString(CultureInfo.InvariantCulture)),
+                new XAttribute("height", settings.Height.ToString(CultureInfo.InvariantCulture)));
+            ApplyLevelName(mapEl, settings);
 
             XElement settingsLayer = new("layer",
                 new XAttribute("name", "settings"),
-                new XElement("map",
-                    new XAttribute("gridSize", "32"),
-                    new XAttribute("width", settings.Width.ToString(CultureInfo.InvariantCulture)),
-                    new XAttribute("height", settings.Height.ToString(CultureInfo.InvariantCulture))),
+                mapEl,
                 gameDesignEl);
             XElement objectsLayer = new("layer", new XAttribute("name", "Objects"));
             XDocument doc = new(
@@ -106,6 +110,12 @@ namespace CtrDxEditor.Core.Document
         /// <summary>The level height in map units.</summary>
         public int Height => ReadInt(SettingsMap, "height", 0);
 
+        /// <summary>
+        /// The level's display name, or an empty string when the map carries none. The game resolves it
+        /// through its string table (shipped packs store a key) and shows the raw text when no entry matches.
+        /// </summary>
+        public string LevelName => SettingsMap?.Attribute("levelName")?.Value ?? string.Empty;
+
         /// <summary>Whether the level uses the two-candy split layout.</summary>
         public bool TwoParts =>
             bool.TryParse(GameDesign?.Attribute("twoParts")?.Value, out bool v) && v;
@@ -136,9 +146,21 @@ namespace CtrDxEditor.Core.Document
         /// </summary>
         public float WaterSpeed => ReadFloat(GameDesign, "waterSpeed", 0f);
 
+        /// <summary>
+        /// Horizontal gravity for the level, positive pointing right. Absent means the game's default of none.
+        /// </summary>
+        public float GravityX => ReadFloat(GameDesign, "globalGravityX", LevelGravity.DefaultX);
+
+        /// <summary>
+        /// Vertical gravity for the level, positive pulling downward. Absent means normal Earth gravity, which
+        /// is why an explicit 0 (weightless) is a different level from one carrying no attribute.
+        /// </summary>
+        public float GravityY => ReadFloat(GameDesign, "globalGravityY", LevelGravity.DefaultY);
+
         /// <summary>All editable level-wide settings read from the settings layer.</summary>
         public LevelSettings Settings =>
-            new(Width, Height, RopePhysicsSpeed, Special, TwoParts, NightLevel, UseMobilePhysics, Water, WaterSpeed);
+            new(Width, Height, RopePhysicsSpeed, Special, TwoParts, NightLevel, UseMobilePhysics, Water, WaterSpeed,
+                LevelName, GravityX, GravityY);
 
         /// <summary>All object layers (every <c>&lt;layer&gt;</c> except <c>settings</c>), in document order.</summary>
         public IReadOnlyList<LevelLayer> Layers =>
@@ -334,6 +356,7 @@ namespace CtrDxEditor.Core.Document
             map.SetAttributeValue("gridSize", "32");
             map.SetAttributeValue("width", settings.Width.ToString(CultureInfo.InvariantCulture));
             map.SetAttributeValue("height", settings.Height.ToString(CultureInfo.InvariantCulture));
+            ApplyLevelName(map, settings);
             gameDesign.SetAttributeValue("ropePhysicsSpeed", settings.RopePhysicsSpeed.ToString(CultureInfo.InvariantCulture));
             gameDesign.SetAttributeValue("special", settings.Special.ToString(CultureInfo.InvariantCulture));
             gameDesign.SetAttributeValue("twoParts", settings.TwoParts ? "true" : "false");
@@ -347,6 +370,7 @@ namespace CtrDxEditor.Core.Document
                 gameDesign.Attribute("useMobilePhysics")?.Remove();
             }
             ApplyWater(gameDesign, settings);
+            ApplyGravity(gameDesign, settings);
 
             if (wasTwoParts != settings.TwoParts)
             {
@@ -453,10 +477,37 @@ namespace CtrDxEditor.Core.Document
             SetOrRemoveFloat(gameDesign, "waterSpeed", settings.WaterSpeed);
         }
 
-        /// <summary>Sets an invariant-formatted float attribute, or removes it when the value is zero.</summary>
-        private static void SetOrRemoveFloat(XElement el, string attr, float value)
+        /// <summary>
+        /// Writes the trimmed level name, or removes the attribute when the name is blank, so a level that
+        /// never had one stays free of the attribute.
+        /// </summary>
+        private static void ApplyLevelName(XElement map, LevelSettings settings)
         {
-            if (value == 0f)
+            string name = settings.LevelName?.Trim() ?? string.Empty;
+            if (name.Length == 0)
+            {
+                map.Attribute("levelName")?.Remove();
+                return;
+            }
+
+            map.SetAttributeValue("levelName", name);
+        }
+
+        /// <summary>
+        /// Writes the gravity attributes when they differ from the game's defaults and removes them otherwise.
+        /// Each axis is compared against its own default rather than zero, so a weightless level keeps its
+        /// explicit <c>globalGravityY="0"</c> instead of silently reverting to Earth gravity on the next load.
+        /// </summary>
+        private static void ApplyGravity(XElement gameDesign, LevelSettings settings)
+        {
+            SetOrRemoveFloat(gameDesign, "globalGravityX", settings.GravityX, LevelGravity.DefaultX);
+            SetOrRemoveFloat(gameDesign, "globalGravityY", settings.GravityY, LevelGravity.DefaultY);
+        }
+
+        /// <summary>Sets an invariant-formatted float attribute, or removes it when it holds its default.</summary>
+        private static void SetOrRemoveFloat(XElement el, string attr, float value, float defaultValue = 0f)
+        {
+            if (value == defaultValue)
             {
                 el.Attribute(attr)?.Remove();
                 return;
