@@ -12,7 +12,7 @@ _Cut the Rope DX: Level Editor_ is a standalone app for creating and editing lev
 
 Try the online version of the editor at <https://yell0wsuit.github.io/ctrdx-editor/>.
 
-Inspired by @adriandrummis's [Cut the Rope Level Editor](https://adriandrummis.github.io/CutTheRopeEditor/), it aims to be portable, lightweight, and streamlined to edit with.
+Inspired by @adriandrummis's [Cut the Rope Level Editor](https://popcap.nekoweb.org/editor/), it aims to be portable, lightweight, and streamlined to edit with.
 
 This project is a part of the [_Cut the Rope Home_](https://ctrhome.github.io/fan-projects/) fan project, created by [yell0wsuit](https://github.com/yell0wsuit), with help from [contributors](https://github.com/yell0wsuit/ctrdx-editor/graphs/contributors).
 
@@ -24,7 +24,7 @@ The icon is designed by adriandrummis.
 ### Related projects
 
 - [Cut the Rope: DX](https://github.com/yell0wsuit/cuttherope-dx): a fan-made enhancement of the PC version of Cut the Rope, aims to improve the original game's codebase, add new features, and enhance the overall gaming experience.
-- [Cut the Rope Level Editor](https://adriandrummis.github.io/CutTheRopeEditor/): a Turbowarp-based level editor for Cut the Rope.
+- [Cut the Rope Level Editor](https://popcap.nekoweb.org/editor/): a Turbowarp-based level editor for Cut the Rope.
 
 ### Download
 
