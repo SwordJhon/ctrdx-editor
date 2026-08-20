@@ -60,7 +60,7 @@ namespace CtrDxEditor.Core.Document
             ApplyGravity(gameDesignEl, settings);
 
             XElement mapEl = new("map",
-                new XAttribute("gridSize", "32"),
+                new XAttribute("gridSize", settings.GridSize.ToString(CultureInfo.InvariantCulture)),
                 new XAttribute("width", settings.Width.ToString(CultureInfo.InvariantCulture)),
                 new XAttribute("height", settings.Height.ToString(CultureInfo.InvariantCulture)));
             ApplyLevelName(mapEl, settings);
@@ -169,7 +169,7 @@ namespace CtrDxEditor.Core.Document
         /// <summary>All editable level-wide settings read from the settings layer.</summary>
         public LevelSettings Settings =>
             new(Width, Height, RopePhysicsSpeed, TwoParts, NightLevel, UseMobilePhysics,
-                UseTimeTravelRocketPhysics, Water, WaterSpeed, LevelName, GravityX, GravityY);
+                UseTimeTravelRocketPhysics, Water, WaterSpeed, LevelName, GravityX, GravityY, GridSize);
 
         /// <summary>All object layers (every <c>&lt;layer&gt;</c> except <c>settings</c>), in document order.</summary>
         public IReadOnlyList<LevelLayer> Layers =>
@@ -362,7 +362,7 @@ namespace CtrDxEditor.Core.Document
             XElement map = settingsLayer.Element("map") ?? AddChild(settingsLayer, "map");
             XElement gameDesign = settingsLayer.Element("gameDesign") ?? AddChild(settingsLayer, "gameDesign");
 
-            map.SetAttributeValue("gridSize", "32");
+            map.SetAttributeValue("gridSize", settings.GridSize.ToString(CultureInfo.InvariantCulture));
             map.SetAttributeValue("width", settings.Width.ToString(CultureInfo.InvariantCulture));
             map.SetAttributeValue("height", settings.Height.ToString(CultureInfo.InvariantCulture));
             ApplyLevelName(map, settings);
