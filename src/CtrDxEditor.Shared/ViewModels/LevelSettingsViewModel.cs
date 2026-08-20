@@ -118,10 +118,14 @@ namespace CtrDxEditor.ViewModels
         /// <summary>Available resolutions; the last entry is the custom sentinel.</summary>
         public ObservableCollection<ResolutionPreset> Presets { get; } =
         [
-            new("320 x 480", 320, 480, false),
-            new("640 x 480", 640, 480, false),
-            new("320 x 960", 320, 960, false),
-            new("640 x 960", 640, 960, false),
+            new(Localizer.Get("Dialog.LevelSettings.LevelSize.320.480"), 320, 480, false),
+            new(Localizer.Get("Dialog.LevelSettings.LevelSize.640.480"), 640, 480, false),
+            new(Localizer.Get("Dialog.LevelSettings.LevelSize.840.480"), 840, 480, false),
+            new(Localizer.Get("Dialog.LevelSettings.LevelSize.853.480"), 853, 480, false),
+            new(Localizer.Get("Dialog.LevelSettings.LevelSize.320.960"), 320, 960, false),
+            new(Localizer.Get("Dialog.LevelSettings.LevelSize.640.960"), 640, 960, false),
+            new(Localizer.Get("Dialog.LevelSettings.LevelSize.840.960"), 840, 960, false),
+            new(Localizer.Get("Dialog.LevelSettings.LevelSize.853.960"), 853, 960, false),
             new(Localizer.Get("Dialog.LevelSettings.Custom"), 0, 0, true),
         ];
 
