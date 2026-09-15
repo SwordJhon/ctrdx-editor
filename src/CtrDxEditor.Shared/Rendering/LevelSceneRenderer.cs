@@ -147,7 +147,8 @@ namespace CtrDxEditor.Rendering
             double offsetY = SockPlacementOffsetY(obj, sprite);
             foreach (SpriteLayerDraw layer in sprite.Layers)
             {
-                LevelBounds d = SpritePlacement.Compute(layer.Frame, obj.X, obj.Y + offsetY, sprite.Scale).Dest;
+                LevelBounds d = SpritePlacement.Compute(
+                    layer.Frame, obj.X, obj.Y + offsetY, sprite.Scale, centerOnFrame: layer.CenterOnFrame).Dest;
                 minX = Math.Min(minX, d.X);
                 minY = Math.Min(minY, d.Y);
                 maxX = Math.Max(maxX, d.X + d.W);
@@ -265,6 +266,8 @@ namespace CtrDxEditor.Rendering
                 "lantern" => 13,
                 // The game keeps axes in the candies list, so they draw in the same whole-candy pass.
                 "axe" => 13,
+                // Bombs live in the candies list as well (LoadBomb adds them there).
+                "bomb" => 13,
                 "lightBulb" => 14,
                 "tutorialText" => 15,
                 "tutorial01" or "tutorial02" or "tutorial03" or "tutorial04" or "tutorial05" or "tutorial06"
@@ -1777,7 +1780,8 @@ namespace CtrDxEditor.Rendering
             double? rotationDegrees = null,
             double placementOffsetY = 0.0)
         {
-            SpriteLayout layout = SpritePlacement.Compute(layer.Frame, x, y + placementOffsetY, scale);
+            SpriteLayout layout = SpritePlacement.Compute(
+                layer.Frame, x, y + placementOffsetY, scale, centerOnFrame: layer.CenterOnFrame);
             Rect source = new(layout.Source.X, layout.Source.Y, layout.Source.W, layout.Source.H);
             Vec2 dtl = v.LevelToScreen(new Vec2(layout.Dest.X, layout.Dest.Y));
             Vec2 dbr = v.LevelToScreen(new Vec2(layout.Dest.X + layout.Dest.W, layout.Dest.Y + layout.Dest.H));

@@ -66,6 +66,8 @@ namespace CtrDxEditor.Content
         private const string AxeImageBase = "images/obj_axe";
         private const string PauseJson = "images/obj_pause.json";
         private const string PauseImageBase = "images/obj_pause";
+        private const string BombJson = "images/obj_bomb.json";
+        private const string BombImageBase = "images/obj_bomb";
         private const string ChainJson = "images/obj_exp_chain.json";
         private const string ChainImageBase = "images/obj_exp_chain";
         private const string HookChainJson = "images/obj_hook_chain.json";
@@ -289,19 +291,27 @@ namespace CtrDxEditor.Content
                 new SpriteLayer(LanternJson, LanternImageBase, 1),
             ]),
 
-            // Axe (game ObjAxe): base (0), blade (1), and pivot cap (2), all centered on the same
-            // 183x201 sourceSize. The game spins the blade while the axe swings; the editor draws the
-            // rest pose.
+            // Axe (game ObjAxe): base (0), blade (1), and pivot cap (2). Axe builds each part with
+            // GameObject_createWithResIDQuad and never restores cut transparency, so every trimmed quad is
+            // centered on the axe on its own rather than placed within the shared sourceSize. The game
+            // spins the blade while the axe swings; the editor draws the rest pose.
             new("axe",
             [
-                new SpriteLayer(AxeJson, AxeImageBase, 0),
-                new SpriteLayer(AxeJson, AxeImageBase, 1),
-                new SpriteLayer(AxeJson, AxeImageBase, 2),
+                new SpriteLayer(AxeJson, AxeImageBase, 0, CenterOnFrame: true),
+                new SpriteLayer(AxeJson, AxeImageBase, 1, CenterOnFrame: true),
+                new SpriteLayer(AxeJson, AxeImageBase, 2, CenterOnFrame: true),
             ]),
 
             // Pause switcher (game ObjPause). Quad 0 is the running face, which is how a level starts;
             // quad 1 is the frozen face and the remaining quads belong to the burst animation.
-            new("pauseSwitcher", [new SpriteLayer(PauseJson, PauseImageBase, 0)]),
+            // PauseSwitcher.Create never restores cut transparency, so the 216x215 face is centered on
+            // the switcher. Its sourceSize is the 998x1498 animation stage, which parks the face far off
+            // center - placing it by that trim drew the button well right of where the game does.
+            new("pauseSwitcher", [new SpriteLayer(PauseJson, PauseImageBase, 0, CenterOnFrame: true)]),
+
+            // Bomb (game ObjBomb). Quad 0 is the intact body; the rest are its debris fragments. Bomb
+            // builds the body with GameObject_createWithResIDQuad, so the trimmed quad is centered too.
+            new(BombBinding.Element, [new SpriteLayer(BombJson, BombImageBase, 0, CenterOnFrame: true)]),
 
             // Mouse (game element gap/mouse). Layer 0 is the static hole (Mouse.HoleQuad) drawn
             // upright; layers 1-2 are the idle mouse body (Mouse.IdleQuad) and its open eyes
