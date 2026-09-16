@@ -369,7 +369,6 @@ namespace CtrDxEditor.ViewModels
             && GravityXError.Length == 0
             && GravityYError.Length == 0
             && (!IsCustom || (CustomWidthError.Length == 0 && CustomHeightError.Length == 0))
-            && (!IsSpecialCustom || CustomSpecialError.Length == 0)
             && GridSizeError.Length == 0;
 
         /// <summary>
@@ -590,7 +589,6 @@ namespace CtrDxEditor.ViewModels
         {
             int width = IsCustom ? ClampOrDefault(CustomWidth, MinWidth, MinWidth, MaxDimension) : SelectedPreset.Width;
             int height = IsCustom ? ClampOrDefault(CustomHeight, MinHeight, MinHeight, MaxDimension) : SelectedPreset.Height;
-            int special = IsSpecialCustom ? ClampOrDefault(CustomSpecial, 0, 0, MaxSpecial) : SelectedSpecial.Value;
             int gridSize = ClampOrDefault(GridSize, 32, MinGridSize, MaxDimension);
             float rope = (float)(RopePhysicsSpeed ?? 1.0m);
             return new LevelSettings(
