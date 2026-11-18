@@ -104,6 +104,7 @@ namespace CtrDxEditor.ViewModels
 
         private const int MinWidth = 320;
         private const int MinHeight = 480;
+        private const int MinGridSize = 1;
         private const int MaxDimension = 9999;
         private const int MinRopeSpeed = -100;
         private const int MaxRopeSpeed = 100;
@@ -150,6 +151,13 @@ namespace CtrDxEditor.ViewModels
         [NotifyPropertyChangedFor(nameof(HasCustomHeightError))]
         [NotifyPropertyChangedFor(nameof(CanConfirm))]
         public partial string CustomHeightText { get; set; } = Format(MinHeight);
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(GridSize))]
+        [NotifyPropertyChangedFor(nameof(GridSizeError))]
+        [NotifyPropertyChangedFor(nameof(HasGridSizeError))]
+        [NotifyPropertyChangedFor(nameof(CanConfirm))]
+        public partial string GridSizeText { get; set; } = Format(MinGridSize);
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(RopePhysicsSpeed))]
@@ -225,6 +233,9 @@ namespace CtrDxEditor.ViewModels
         public decimal? CustomHeight { get => Parse(CustomHeightText); set => CustomHeightText = Format(value); }
 
         /// <summary>Rope simulation speed multiplier, or null when the box holds no usable number.</summary>
+        public decimal? GridSize { get => Parse(GridSizeText); set => GridSizeText = Format(value); }
+
+        /// <summary>Rope simulation speed multiplier, or null when the box holds no usable number.</summary>
         public decimal? RopePhysicsSpeed { get => Parse(RopePhysicsSpeedText); set => RopePhysicsSpeedText = Format(value); }
 
         /// <summary>Water height, or null when the box holds no usable number.</summary>
@@ -244,6 +255,9 @@ namespace CtrDxEditor.ViewModels
 
         /// <summary>Why the height box is unusable, or empty text when it holds a valid height.</summary>
         public string CustomHeightError => Validate(CustomHeightText, MinHeight, MaxDimension);
+
+        /// <summary>Why the grid size box is unusable, or empty text when it holds a valid height.</summary>
+        public string GridSizeError => Validate(GridSizeText, MinGridSize, MaxDimension);
 
         /// <summary>Why the rope speed box is unusable, or empty text when it holds a valid speed.</summary>
         public string RopePhysicsSpeedError => Validate(RopePhysicsSpeedText, MinRopeSpeed, MaxRopeSpeed);
@@ -265,6 +279,9 @@ namespace CtrDxEditor.ViewModels
 
         /// <summary>Whether the height box has something to complain about.</summary>
         public bool HasCustomHeightError => CustomHeightError.Length > 0;
+
+        /// <summary>Whether the grid size box has something to complain about.</summary>
+        public bool HasGridSizeError => GridSizeError.Length > 0;
 
         /// <summary>Whether the rope speed box has something to complain about.</summary>
         public bool HasRopePhysicsSpeedError => RopePhysicsSpeedError.Length > 0;
@@ -347,6 +364,7 @@ namespace CtrDxEditor.ViewModels
             && WaterSpeedError.Length == 0
             && GravityXError.Length == 0
             && GravityYError.Length == 0
+            && GridSizeError.Length == 0
             && (!IsCustom || (CustomWidthError.Length == 0 && CustomHeightError.Length == 0));
 
         /// <summary>
@@ -550,6 +568,7 @@ namespace CtrDxEditor.ViewModels
                 GravityY = (decimal)current.GravityY,
                 CustomWidth = current.Width,
                 CustomHeight = current.Height,
+                GridSize = current.GridSize,
                 SelectedRopeSkin = ropeSkin,
                 SelectedBackground = background,
                 SelectedCandySkin = candySkin,
@@ -566,6 +585,7 @@ namespace CtrDxEditor.ViewModels
         {
             int width = IsCustom ? ClampOrDefault(CustomWidth, MinWidth, MinWidth, MaxDimension) : SelectedPreset.Width;
             int height = IsCustom ? ClampOrDefault(CustomHeight, MinHeight, MinHeight, MaxDimension) : SelectedPreset.Height;
+            int gridSize = ClampOrDefault(GridSize, 32, MinGridSize, MaxDimension);
             float rope = (float)(RopePhysicsSpeed ?? 1.0m);
             return new LevelSettings(
                 width, height, rope, TwoParts, NightLevel, UseMobilePhysics,
@@ -573,7 +593,8 @@ namespace CtrDxEditor.ViewModels
                 (float)(Water ?? 0m), (float)(WaterSpeed ?? 0m),
                 LevelName?.Trim() ?? string.Empty,
                 (float)(GravityX ?? (decimal)LevelGravity.DefaultX),
-                (float)(GravityY ?? (decimal)LevelGravity.DefaultY));
+                (float)(GravityY ?? (decimal)LevelGravity.DefaultY),
+                gridSize);
         }
 
         private static RopeSkinOption[] BuildRopeSkinOptions()
