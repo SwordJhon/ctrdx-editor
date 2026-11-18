@@ -7,7 +7,7 @@ set -euo pipefail
 
 APP_NAME="CtrDxEditor"
 DISPLAY_NAME="Cut the Rope DX: Level Editor"
-BUNDLE_ID="page.yell0wsuit.ctrdx.editor"
+BUNDLE_ID="page.swordjhon.ctrdx.editor"
 RID="osx-arm64"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

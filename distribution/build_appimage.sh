@@ -8,7 +8,7 @@
 set -euo pipefail
 
 APP_NAME="CtrDxEditor"
-APP_ID="page.yell0wsuit.ctrdx.editor"
+APP_ID="page.swordjhon.ctrdx.editor"
 DISPLAY_NAME="Cut the Rope DX: Level Editor"
 DESCRIPTION="A standalone level editor for Cut the Rope: DX."
 RID="linux-x64"
@@ -114,7 +114,7 @@ ZSYNC_PATH="$APPIMAGE_PATH.zsync"
 rm -f "$APPIMAGE_PATH" "$ZSYNC_PATH"
 
 # Lets AppImageUpdate find the newest release's .zsync; the wildcard covers the version.
-UPDATE_INFO="gh-releases-zsync|yell0wsuit|ctrdx-editor|latest|$APPIMAGE_NAME-*-x86_64.AppImage.zsync"
+UPDATE_INFO="gh-releases-zsync|swordjhon|ctrdx-editor|latest|$APPIMAGE_NAME-*-x86_64.AppImage.zsync"
 
 # GitHub's ubuntu runners have no libfuse2, so appimagetool cannot mount itself.
 # Extracting and running sidesteps that without installing anything.

@@ -22,10 +22,10 @@ namespace CtrDxEditor.Update
         /// prerelease, so betas published from this repository do not prompt anyone to "update".
         /// </remarks>
         private const string LatestReleaseUrl =
-            "https://api.github.com/repos/yell0wsuit/ctrdx-editor/releases/latest";
+            "https://api.github.com/repos/SwordJhon/ctrdx-editor/releases/latest";
 
         /// <summary>The release page "Yes" opens; GitHub redirects it to the newest stable release.</summary>
-        public const string ReleasesUrl = "https://github.com/yell0wsuit/ctrdx-editor/releases/latest";
+        public const string ReleasesUrl = "https://github.com/SwordJhon/ctrdx-editor/releases/latest";
 
         /// <summary>How long the check may take before it is abandoned as a failure.</summary>
         /// <remarks>Short on purpose: nothing waits on the result, but a stalled request should not
